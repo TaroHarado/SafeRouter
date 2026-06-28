@@ -8,12 +8,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Semaphore;
 
 use crate::deep_scan;
 use crate::scan;
@@ -29,6 +30,7 @@ pub struct WebConfig {
 #[derive(Clone)]
 struct AppState {
     site_dir: PathBuf,
+    scan_slots: Arc<Semaphore>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,9 +62,19 @@ pub struct HealthResponse {
 pub async fn run(cfg: WebConfig) -> anyhow::Result<()> {
     let state = Arc::new(AppState {
         site_dir: cfg.site_dir,
+        scan_slots: Arc::new(Semaphore::new(2)),
     });
 
-    let app = Router::new()
+    let app = router(state);
+
+    tracing::info!(listen=%cfg.listen, "SafeRouter local web up");
+    let listener = tokio::net::TcpListener::bind(cfg.listen).await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+fn router(state: Arc<AppState>) -> Router {
+    Router::new()
         .route("/api/health", get(health))
         .route("/api/scan", post(run_scan))
         .route("/api/deep-scan", post(run_deep_scan))
@@ -70,12 +82,8 @@ pub async fn run(cfg: WebConfig) -> anyhow::Result<()> {
         .route("/", get(index))
         .route("/styles.css", get(styles))
         .route("/app.js", get(app_js))
-        .with_state(state);
-
-    tracing::info!(listen=%cfg.listen, "SafeRouter local web up");
-    let listener = tokio::net::TcpListener::bind(cfg.listen).await?;
-    axum::serve(listener, app).await?;
-    Ok(())
+        .layer(DefaultBodyLimit::max(16 * 1024))
+        .with_state(state)
 }
 
 async fn health() -> Json<HealthResponse> {
@@ -85,14 +93,18 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
-async fn run_scan(Json(req): Json<ScanRequest>) -> Result<Json<scan::ScanReport>, ApiError> {
+async fn run_scan(State(state): State<Arc<AppState>>, Json(req): Json<ScanRequest>) -> Result<Json<scan::ScanReport>, ApiError> {
+    validate_base_url(&req.base_url)?;
     let key = req.api_key.filter(|k| !k.is_empty()).map(Secret::new);
+    let _permit = state.scan_slots.acquire().await.map_err(|_| ApiError::message("scan queue unavailable"))?;
     let report = scan::run(&req.base_url, key).await.map_err(ApiError::from_anyhow)?;
     Ok(Json(report))
 }
 
-async fn run_deep_scan(Json(req): Json<DeepScanRequest>) -> Result<Json<deep_scan::DeepScanReport>, ApiError> {
+async fn run_deep_scan(State(state): State<Arc<AppState>>, Json(req): Json<DeepScanRequest>) -> Result<Json<deep_scan::DeepScanReport>, ApiError> {
+    validate_base_url(&req.base_url)?;
     let key = req.api_key.filter(|k| !k.is_empty()).map(Secret::new);
+    let _permit = state.scan_slots.acquire().await.map_err(|_| ApiError::message("scan queue unavailable"))?;
     let report = deep_scan::run(
         &req.base_url,
         key,
@@ -104,11 +116,24 @@ async fn run_deep_scan(Json(req): Json<DeepScanRequest>) -> Result<Json<deep_sca
     Ok(Json(report))
 }
 
-async fn run_score(Json(req): Json<ScoreRequest>) -> Result<Json<score::ProviderScore>, ApiError> {
+async fn run_score(State(state): State<Arc<AppState>>, Json(req): Json<ScoreRequest>) -> Result<Json<score::ProviderScore>, ApiError> {
+    validate_base_url(&req.base_url)?;
     let key = req.api_key.filter(|k| !k.is_empty()).map(Secret::new);
+    let _permit = state.scan_slots.acquire().await.map_err(|_| ApiError::message("scan queue unavailable"))?;
     let scan_report = scan::run(&req.base_url, key).await.map_err(ApiError::from_anyhow)?;
     let report = score::score_provider(&req.base_url, scan_report);
     Ok(Json(report))
+}
+
+fn validate_base_url(url: &str) -> Result<(), ApiError> {
+    if url.trim().is_empty() {
+        return Err(ApiError::message("base_url is required"));
+    }
+    let parsed = reqwest::Url::parse(url).map_err(|_| ApiError::message("base_url must be a valid http/https URL"))?;
+    match parsed.scheme() {
+        "http" | "https" => Ok(()),
+        _ => Err(ApiError::message("base_url must use http or https")),
+    }
 }
 
 async fn index(State(state): State<Arc<AppState>>) -> Result<Html<String>, ApiError> {
@@ -149,6 +174,12 @@ impl ApiError {
             message: err.to_string(),
         }
     }
+
+    fn message(msg: &str) -> Self {
+        Self {
+            message: msg.to_string(),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -166,10 +197,61 @@ impl IntoResponse for ApiError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::util::ServiceExt;
 
     #[test]
     fn api_error_is_structured() {
         let err = ApiError::from_anyhow(anyhow::anyhow!("boom"));
         assert_eq!(err.message, "boom");
+    }
+
+    #[test]
+    fn validate_base_url_accepts_http_and_https() {
+        assert!(validate_base_url("http://127.0.0.1:8484").is_ok());
+        assert!(validate_base_url("https://api.deepseek.com/v1").is_ok());
+    }
+
+    #[test]
+    fn validate_base_url_rejects_empty_and_non_http() {
+        assert!(validate_base_url("").is_err());
+        assert!(validate_base_url("file:///tmp/x").is_err());
+    }
+
+    #[tokio::test]
+    async fn health_endpoint_returns_ok() {
+        let state = Arc::new(AppState {
+            site_dir: PathBuf::from("site"),
+            scan_slots: Arc::new(Semaphore::new(2)),
+        });
+        let app = router(state);
+        let response = app
+            .oneshot(Request::builder().uri("/api/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn score_endpoint_rejects_empty_base_url() {
+        let state = Arc::new(AppState {
+            site_dir: PathBuf::from("site"),
+            scan_slots: Arc::new(Semaphore::new(2)),
+        });
+        let app = router(state);
+        let body = serde_json::json!({"base_url": "", "api_key": null}).to_string();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/score")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }
