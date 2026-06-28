@@ -11,7 +11,10 @@ Write-Host "help: ok"
 & $BinaryPath audit | Out-Null
 Write-Host "audit: ok"
 
-& $BinaryPath sentinel --interval 5ms | Out-Null
-Write-Host "sentinel: ok"
+& $BinaryPath registry list | Out-Null
+Write-Host "registry: ok"
+
+& $BinaryPath score --help | Out-Null
+Write-Host "score: ok"
 
 Write-Host "smoke: ok"

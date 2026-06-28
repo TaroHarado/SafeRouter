@@ -20,15 +20,19 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
+            native_smoke: true
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             archive: tar.gz
+            native_smoke: true
           - target: x86_64-apple-darwin
             os: macos-latest
             archive: tar.gz
+            native_smoke: false
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
+            native_smoke: false
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +42,17 @@ jobs:
 
       - name: Build release binary
         run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Smoke test (Windows)
+        if: matrix.native_smoke && matrix.os == 'windows-latest'
+        run: |
+          ./scripts/smoke-release.ps1 -BinaryPath "./target/${{ matrix.target }}/release/cape.exe"
+
+      - name: Smoke test (POSIX)
+        if: matrix.native_smoke && matrix.os != 'windows-latest'
+        run: |
+          chmod +x ./scripts/smoke-release.sh
+          ./scripts/smoke-release.sh "./target/${{ matrix.target }}/release/cape"
 
       - name: Package (Windows)
         if: matrix.archive == 'zip'

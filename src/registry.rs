@@ -15,12 +15,22 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 
 use crate::certify::RegistryEntry;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Registry {
     pub entries: Vec<RegistryEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegistryFeed {
+    pub schema_version: String,
+    pub generated_at: String,
+    pub entries: Vec<RegistryEntry>,
+    /// Optional detached signature over the feed digest.
+    pub signature: Option<String>,
 }
 
 impl Registry {
@@ -74,14 +84,76 @@ impl Registry {
             self.add(entry);
         }
     }
+
+    pub fn to_feed(&self) -> RegistryFeed {
+        RegistryFeed {
+            schema_version: "1".to_string(),
+            generated_at: time::OffsetDateTime::now_utc()
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_else(|_| "?".to_string()),
+            entries: self.entries.clone(),
+            signature: None,
+        }
+    }
 }
 
 pub async fn fetch_remote_registry(url: &str) -> anyhow::Result<Registry> {
     let resp = reqwest::get(url).await?.error_for_status()?;
     let raw = resp.text().await?;
-    let reg = serde_json::from_str(&raw)
-        .with_context(|| format!("parse remote registry from `{url}`"))?;
-    Ok(reg)
+    // Accept either the plain registry or the wrapped signed feed format.
+    if let Ok(feed) = serde_json::from_str::<RegistryFeed>(&raw) {
+        Ok(Registry {
+            entries: feed.entries,
+        })
+    } else {
+        let reg = serde_json::from_str(&raw)
+            .with_context(|| format!("parse remote registry from `{url}`"))?;
+        Ok(reg)
+    }
+}
+
+impl RegistryFeed {
+    pub fn signing_digest(&self) -> [u8; 32] {
+        let bytes = serde_json::to_vec(&(&self.schema_version, &self.generated_at, &self.entries))
+            .expect("serializable registry feed");
+        let digest = sha2::Sha256::digest(bytes);
+        let mut out = [0u8; 32];
+        out.copy_from_slice(&digest);
+        out
+    }
+
+    pub fn sign_with_base64_secret(&mut self, secret_b64: &str) -> anyhow::Result<()> {
+        use base64::Engine as _;
+        use ed25519_dalek::{Signer, SigningKey};
+
+        let secret = base64::engine::general_purpose::STANDARD.decode(secret_b64.as_bytes())?;
+        let arr: [u8; 32] = secret
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("signing key must be 32 raw bytes in base64"))?;
+        let sk = SigningKey::from_bytes(&arr);
+        let sig = sk.sign(&self.signing_digest());
+        self.signature = Some(base64::engine::general_purpose::STANDARD.encode(sig.to_bytes()));
+        Ok(())
+    }
+
+    pub fn verify_with_pubkey(&self, pubkey_b64: &str) -> anyhow::Result<()> {
+        use base64::Engine as _;
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+        let sig_b64 = self.signature.as_ref().ok_or_else(|| anyhow::anyhow!("missing feed signature"))?;
+        let sig_bytes = base64::engine::general_purpose::STANDARD.decode(sig_b64.as_bytes())?;
+        let sig = Signature::from_slice(&sig_bytes)?;
+
+        let pk_bytes = base64::engine::general_purpose::STANDARD.decode(pubkey_b64.as_bytes())?;
+        let arr: [u8; 32] = pk_bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("pubkey must decode to 32 bytes"))?;
+        let vk = VerifyingKey::from_bytes(&arr)?;
+        vk.verify(&self.signing_digest(), &sig)?;
+        Ok(())
+    }
 }
 
 pub fn default_registry_path() -> PathBuf {
@@ -102,6 +174,8 @@ mod tests {
     use crate::certify::RegistryEntry;
     use crate::scan::{RiskLevel, ScanReport};
     use crate::score::{render_badge_svg, score_provider};
+    use base64::Engine as _;
+    use ed25519_dalek::{SigningKey, VerifyingKey};
 
     fn sample_entry(host: &str) -> RegistryEntry {
         let scan = ScanReport {
@@ -148,5 +222,19 @@ mod tests {
         let loaded = Registry::load(&path).unwrap();
         assert_eq!(loaded.entries.len(), 1);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn feed_sign_and_verify_round_trip() {
+        let mut reg = Registry::default();
+        reg.add(sample_entry("api.deepseek.com"));
+        let mut feed = reg.to_feed();
+
+        let sk = SigningKey::generate(&mut rand_core::OsRng);
+        let secret_b64 = base64::engine::general_purpose::STANDARD.encode(sk.to_bytes());
+        let pub_b64 = base64::engine::general_purpose::STANDARD.encode(VerifyingKey::from(&sk).to_bytes());
+
+        feed.sign_with_base64_secret(&secret_b64).unwrap();
+        feed.verify_with_pubkey(&pub_b64).unwrap();
     }
 }

@@ -252,4 +252,17 @@ pub enum RegistryCmd {
         #[arg(long)]
         registry: Option<PathBuf>,
     },
+
+    /// Export the local registry as a publishable remote feed (optionally signed).
+    Export {
+        #[arg(long)]
+        out: PathBuf,
+
+        #[arg(long)]
+        registry: Option<PathBuf>,
+
+        /// Optional base64-encoded Ed25519 secret key used to sign the feed.
+        #[arg(long, env = "CAPE_CERTIFY_SECRET")]
+        signing_key: Option<String>,
+    },
 }

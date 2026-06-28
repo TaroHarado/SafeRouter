@@ -236,6 +236,21 @@ async fn main() -> anyhow::Result<()> {
                     eprintln!("registry: synced -> {}", path.display());
                     Ok(())
                 }
+                RegistryCmd::Export {
+                    out,
+                    registry: path,
+                    signing_key,
+                } => {
+                    let path = path.unwrap_or_else(registry::default_registry_path);
+                    let reg = Registry::load(&path)?;
+                    let mut feed = reg.to_feed();
+                    if let Some(sk) = signing_key {
+                        feed.sign_with_base64_secret(&sk)?;
+                    }
+                    std::fs::write(&out, serde_json::to_string_pretty(&feed)?)?;
+                    eprintln!("registry: exported -> {}", out.display());
+                    Ok(())
+                }
             }
         }
         Commands::Artifact { action } => match action {

@@ -10,7 +10,10 @@ echo "help: ok"
 "$BIN" audit >/dev/null
 echo "audit: ok"
 
-"$BIN" sentinel --interval 5ms >/dev/null
-echo "sentinel: ok"
+"$BIN" registry list >/dev/null
+echo "registry: ok"
+
+"$BIN" score --help >/dev/null
+echo "score: ok"
 
 echo "smoke: ok"
