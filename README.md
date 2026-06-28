@@ -360,6 +360,16 @@ The page talks to the local API endpoints:
 
 If the daemon is not running, the frontend falls back to a mock demo state.
 
+### Local try flow
+
+```bash
+cargo run -- keygen --out examples/demo-keys
+cargo run -- demo-feed --out examples/demo-feed
+cargo run -- web --listen 127.0.0.1:8484 --site ./site
+```
+
+Then open `http://127.0.0.1:8484` and run the local scanner.
+
 ---
 
 ## LLM judge slow-path
@@ -405,11 +415,15 @@ cape score
 cape certify
 cape verify
 cape registry
+cape session
+cape policy
 cape artifact
 cape audit
 cape sentinel
 cape feed
 cape web
+cape keygen
+cape demo-feed
 ```
 
 ---
