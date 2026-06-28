@@ -309,10 +309,8 @@ fn mode_label(m: Mode) -> &'static str {
     }
 }
 
-fn parse_declared_tools(_body: &Bytes, _protocol: &str) -> HashSet<String> {
-    // Empty allowlist → every upstream tool_use is unsolicited. Real parsing
-    // of declared `"tools":[{"name":"..."}]` lands in v0.4.
-    HashSet::new()
+fn parse_declared_tools(body: &Bytes, protocol: &str) -> HashSet<String> {
+    crate::tools::parse_request_tools(body, protocol)
 }
 
 fn original_text_frame(text: &str, protocol: &str, index: u32) -> Bytes {
