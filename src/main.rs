@@ -7,6 +7,7 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 use carapace::audit;
+use carapace::bundle;
 use carapace::certify;
 use carapace::cli::{Cli, Commands, Mode, RegistryCmd};
 use carapace::proxy::{self, ProxyConfig};
@@ -129,11 +130,9 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let (report, badge_svg, report_md, entry) =
                 build_certification_bundle(&upstream, key.map(Secret::new), signing_key).await?;
-            let out_dir = out.to_str().unwrap_or(".");
-            std::fs::write(format!("{out_dir}/report.md"), &report_md)?;
-            std::fs::write(format!("{out_dir}/badge.svg"), &badge_svg)?;
-            std::fs::write(format!("{out_dir}/entry.json"), serde_json::to_string_pretty(&entry)?)?;
-            eprintln!("certify: wrote report.md, badge.svg, entry.json to {out_dir}");
+            let bundle = bundle::PublishBundle::write(&out, &report, &report_md, &badge_svg, &entry)?;
+            eprintln!("certify: wrote publish bundle to {}", out.display());
+            eprintln!("certify: {} files + SHA256SUMS", bundle.metadata.files.len() + 2);
             if report.total < 50 {
                 std::process::exit(2);
             }
@@ -149,17 +148,15 @@ async fn main() -> anyhow::Result<()> {
             let (report, badge_svg, report_md, entry) =
                 build_certification_bundle(&upstream, key.map(Secret::new), signing_key).await?;
 
-            let out_dir = out.to_str().unwrap_or(".");
-            std::fs::write(format!("{out_dir}/report.md"), &report_md)?;
-            std::fs::write(format!("{out_dir}/badge.svg"), &badge_svg)?;
-            std::fs::write(format!("{out_dir}/entry.json"), serde_json::to_string_pretty(&entry)?)?;
+            let bundle = bundle::PublishBundle::write(&out, &report, &report_md, &badge_svg, &entry)?;
 
             let registry_path = reg_path.unwrap_or_else(registry::default_registry_path);
             let mut reg = Registry::load(&registry_path)?;
             reg.add(entry.clone());
             reg.save(&registry_path)?;
 
-            eprintln!("verify: report.md, badge.svg, entry.json -> {out_dir}");
+            eprintln!("verify: publish bundle written -> {}", out.display());
+            eprintln!("verify: bundle files = {}", bundle.metadata.files.len() + 2);
             eprintln!("verify: registry updated -> {}", registry_path.display());
             if report.total < 50 {
                 std::process::exit(2);

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TaroHarado/carapace/schemas/bundle.schema.json",
+  "title": "carapace PublishBundle metadata",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "host", "upstream", "grade", "score", "files"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "host": { "type": "string" },
+    "upstream": { "type": "string" },
+    "grade": { "type": "string", "enum": ["A", "B", "C", "D", "F"] },
+    "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "bytes"],
+        "properties": {
+          "path": { "type": "string" },
+          "sha256": { "type": "string" },
+          "bytes": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": true
+}

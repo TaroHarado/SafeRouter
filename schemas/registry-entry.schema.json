@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TaroHarado/carapace/schemas/registry-entry.schema.json",
+  "title": "carapace RegistryEntry",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "upstream",
+    "host",
+    "total",
+    "grade",
+    "official",
+    "transport_https",
+    "summary",
+    "statement",
+    "score_sha256",
+    "badge_sha256"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "upstream": { "type": "string" },
+    "host": { "type": "string" },
+    "total": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "grade": { "type": "string", "enum": ["A", "B", "C", "D", "F"] },
+    "official": { "type": "boolean" },
+    "transport_https": { "type": "boolean" },
+    "summary": { "type": "string" },
+    "statement": { "type": "string" },
+    "score_sha256": { "type": "string" },
+    "badge_sha256": { "type": "string" },
+    "signature": { "type": ["string", "null"] }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TaroHarado/carapace/schemas/feed-manifest.schema.json",
+  "title": "carapace FeedManifest",
+  "type": "object",
+  "required": [
+    "version",
+    "generated_at",
+    "rules_sha256",
+    "blocklist_sha256"
+  ],
+  "properties": {
+    "version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "rules_sha256": { "type": "string" },
+    "blocklist_sha256": { "type": "string" },
+    "signature": { "type": ["string", "null"] }
+  },
+  "additionalProperties": true
+}
