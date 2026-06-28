@@ -1,0 +1,22 @@
+carapace
+Copyright 2026 TaroHarado
+
+This product includes software developed by the carapace project
+(https://github.com/TaroHarado/carapace).
+
+=== Third-party notices ===
+
+This software depends on the following open-source crates (full list in
+Cargo.lock). Each is governed by its own license; here we list the most
+significant ones:
+
+  - tokio (MIT)              — async runtime
+  - hyper (MIT)              — HTTP server/client
+  - serde (MIT)              — serialization
+  - clap (MIT/Apache-2.0)   — CLI framework
+  - regex (MIT)              — RE2-compatible regex
+  - zeroize (Apache-2.0/MIT) — secure memory handling
+
+All trademarks are property of their respective owners. "Anthropic", "OpenAI",
+"DeepSeek", "GLM", "Claude" are mentioned here only as protocol dialects we
+interoperate with; carapace is not affiliated with or endorsed by them.

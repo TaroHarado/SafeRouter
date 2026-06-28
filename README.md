@@ -42,13 +42,15 @@ builds.
 
 ## Distinct from `holone`
 
-| Capability | holone | carapace v0.1.0 |
+| Capability | holone | carapace v0.3.0 |
 |---|---|---|
+| License                   | MIT | **Apache-2.0** (explicit patent grant, trademark clause) |
 | Memory-safe key handling | plain env | `zeroize::Secret`, wiped on drop |
-| Reassembly before scan   | per-chunk | full-buffer reassembly first |
+| Reassembly before scan   | per-chunk | streaming + per-tool_use buffer until `content_block_stop` |
 | Unsolicited tool_use     | ✅ | ✅ + allowed-tool allowlist per request |
 | Default mode             | monitor | **block** (alerts alone are useless) |
 | Protocol adapters        | hardcoded Anthropic/OpenAI | `ProtocolAdapter` trait (z.ai + DeepSeek planned) |
+| E2E chunked-bypass test  | — | ✅ `proxy_blocks_chunked_evil_tool_use_e2e` |
 
 ## Install
 
@@ -81,14 +83,19 @@ export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
 
 ## Roadmap
 
-- **v0.1.0** (this commit): inspecting reverse proxy, builtin rules + blocklist, `block` default.
-- **v0.2.0**: incremental SSE reassembly via `tokio::Stream` (chunk-aware, zero-copy `Bytes`).
-- **v0.3.0**: Anthropic + OpenAI protocol adapters (token-level decode, not raw scan).
-- **v0.4.0**: optional LLM-judge slow-path for suspicious-but-non-matching `tool_use`.
-- **v0.5.0**: `cape scan` canary probe + signed threat-feed updates.
-- **v0.6.0**: `cape audit` host IoC scanner for known campaigns (Windows/POSIX).
-- `cape sentinel` background monitor, encrypted forensics recording, MCP-style
-  protocol adapters.
+- **v0.1.0** initial skeleton: CLI, inspector skeleton, builtin rules, zeroize key.
+- **v0.2.0** Anthropic + OpenAI real SSE parsing under `ProtocolAdapter` trait.
+- **v0.3.0** (current) Streaming forward + per-tool_use reassembly + e2e chunked-bypass test.
+- **v0.4.0** (next) Real `parse_declared_tools` so legitimate Claude Code/Cursor tool_use doesn't get false-flagged.
+- **v0.5.0** `cape scan` canary probe + signed threat feed updates (proprietary feed, SUM free / detail paid).
+- **v0.6.0** `cape audit` host IoC scanner for known campaigns (Windows/POSIX), `cape sentinel` background monitor.
+- **future** Encrypted forensics recording, multiple-protocol adapters (z.ai paas/v4, DeepSeek), LLM-judge slow-path, MCP gateway.
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE). Briefly: you can fork it, sell it,
+modify it; you must keep attribution and the patent grant. The project name
+and `cape` binary name are trademarks — not granted by the license.
 
 ## Disclaimer
 
@@ -97,6 +104,15 @@ risk of routing traffic through an untrusted LLM provider. The only safe option
 is the official endpoint. If you used an unofficial provider before, **rotate
 your API key now** — passive exfiltration cannot be detected on the wire.
 
-## License
+## Licensing & trademark (the honest version)
 
-MIT, see [LICENSE](LICENSE).
+The local proxy you are reading right now is open-source under
+**Apache-2.0** — that gives you a clear patent grant, attribution, and the
+right to fork. The project name `carapace`, the binary name `cape`, the logo,
+and any future "Verified Clean" certification badge are **trademarks held
+separately**; they are not granted by the open-source license. If you fork the
+proxy and ship it inside your own product, please rename it.
+
+Future cloud features (managed threat feed, multi-machine management, audit
+telemetry) will ship as proprietary SaaS — those are explicit paid services
+on top of the open core. The local proxy stays open.
