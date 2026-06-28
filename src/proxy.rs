@@ -15,7 +15,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use http::StatusCode;
 use http_body_util::{BodyExt, BodyStream, Full};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -50,6 +49,7 @@ pub async fn run(cfg: ProxyConfig) -> anyhow::Result<()> {
     let key = Arc::new(cfg.upstream_key);
     let mode = cfg.mode;
     let recorder = cfg.recorder.clone();
+    let forensics = cfg.forensics.clone();
     let rules = cfg.rules.clone();
     let judge = cfg.judge.clone();
 
@@ -62,22 +62,22 @@ pub async fn run(cfg: ProxyConfig) -> anyhow::Result<()> {
             }
         };
         let io = TokioIo::new(stream);
-        let upstream = upstream.clone();
-        let key = key.clone();
-        let recorder = recorder.clone();
-        let rules = rules.clone();
-        let judge = judge.clone();
+        let fwd = Arc::new(ForwardCtx {
+            upstream: upstream.clone(),
+            key: key.clone(),
+            mode,
+            recorder: recorder.clone(),
+            forensics: forensics.clone(),
+            rules: rules.clone(),
+            judge: judge.clone(),
+        });
         tokio::spawn(async move {
             if let Err(e) = http1::Builder::new()
                 .serve_connection(
                     io,
                     service_fn(move |req| {
-                        let upstream = upstream.clone();
-                        let key = key.clone();
-                        let recorder = recorder.clone();
-                        let rules = rules.clone();
-                        let judge = judge.clone();
-                        async move { forward(req, &upstream, &key, mode, recorder, rules, judge).await }
+                        let fwd = fwd.clone();
+                        async move { forward(req, fwd).await }
                     }),
                 )
                 .with_upgrades()
@@ -93,18 +93,23 @@ pub async fn run(cfg: ProxyConfig) -> anyhow::Result<()> {
 /// tokio mpsc, the response body reads from it.
 type Chunk = Result<Bytes, std::io::Error>;
 
-async fn forward(
-    req: Request<hyper::body::Incoming>,
-    upstream: &str,
-    key: &Secret,
+struct ForwardCtx {
+    upstream: Arc<String>,
+    key: Arc<Secret>,
     mode: Mode,
     recorder: Arc<Recorder>,
+    forensics: Option<Arc<EncryptedForensics>>,
     rules: Arc<Rules>,
     judge: Option<Arc<JudgeConfig>>,
+}
+
+async fn forward(
+    req: Request<hyper::body::Incoming>,
+    fwd: Arc<ForwardCtx>,
 ) -> anyhow::Result<Response<BoxBody>> {
     let (mut parts, body) = req.into_parts();
 
-    let _upstream_uri = if parts.uri.scheme().is_some() {
+    let upstream_uri = if parts.uri.scheme().is_some() {
         parts.uri.clone()
     } else {
         let path = parts
@@ -112,7 +117,7 @@ async fn forward(
             .path_and_query()
             .map(|p| p.as_str())
             .unwrap_or("/");
-        let base = upstream.trim_end_matches('/');
+        let base = fwd.upstream.trim_end_matches('/');
         Uri::try_from(format!("{base}{path}"))?
     };
 
@@ -129,14 +134,14 @@ async fn forward(
         .any(|w| w == b"\"stream\":true")
         || content_type.contains("event-stream");
 
-    let adapter = protocol::pick(upstream, &content_type);
+    let adapter = protocol::pick(&fwd.upstream, &content_type);
     let protocol_name = adapter.name();
 
-    if !key.is_empty() {
+    if !fwd.key.is_empty() {
         if protocol_name == "anthropic" {
-            parts.headers.insert("x-api-key", key.as_str().parse()?);
+            parts.headers.insert("x-api-key", fwd.key.as_str().parse()?);
         } else {
-            let auth = format!("Bearer {}", key.as_str());
+            let auth = format!("Bearer {}", fwd.key.as_str());
             parts.headers.insert(http::header::AUTHORIZATION, auth.parse()?);
         }
     }
@@ -146,28 +151,29 @@ async fn forward(
         .headers
         .insert(http::header::ACCEPT, "text/event-stream".parse()?);
 
-    let out_req: Request<Full<Bytes>> = match parts.method {
-        Method::GET | Method::HEAD => Request::from_parts(parts, Full::default()),
-        _ => Request::from_parts(parts, Full::new(body_bytes.clone())),
-    };
+    let client = reqwest::Client::builder()
+        .use_rustls_tls()
+        .build()?;
+    let method = reqwest::Method::from_bytes(parts.method.as_str().as_bytes())?;
+    let mut rb = client.request(method, upstream_uri.to_string());
+    for (name, value) in &parts.headers {
+        rb = rb.header(name, value);
+    }
+    if !matches!(parts.method, Method::GET | Method::HEAD) {
+        rb = rb.body(body_bytes.clone().to_vec());
+    }
 
-    let upstream_host = extract_host(upstream);
-    let stream = tokio::net::TcpStream::connect(&upstream_host).await?;
-    let io = TokioIo::new(stream);
-    let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
-    tokio::spawn(conn);
-
-    let upstream_resp = sender.send_request(out_req).await?;
-    let (rparts, rbody) = upstream_resp.into_parts();
-
-    let resp_bytes = rbody.collect().await?.to_bytes();
+    let upstream_resp = rb.send().await?;
+    let status = upstream_resp.status();
+    let headers = upstream_resp.headers().clone();
+    let resp_bytes = upstream_resp.bytes().await?;
 
     let allowed_tools = parse_declared_tools(&body_bytes, protocol_name);
-    let inspector = Inspector::from_rules(&rules, allowed_tools);
+    let inspector = Inspector::from_rules(&fwd.rules, allowed_tools);
 
     let (tx, rx) = mpsc::channel::<Chunk>(64);
-    let recorder_cloned = recorder.clone();
-    let mode_lite = mode;
+    let recorder_cloned = fwd.recorder.clone();
+    let mode_lite = fwd.mode;
     let protocol_lite = protocol_name.to_string();
 
     let event_stream = adapter.stream(resp_bytes.clone());
@@ -176,7 +182,8 @@ async fn forward(
         mode: mode_lite,
         inspector,
         recorder: recorder_cloned,
-        judge,
+        forensics: fwd.forensics.clone(),
+        judge: fwd.judge.clone(),
     };
     tokio::spawn(inspect_and_forward(event_stream, tx, ctx));
 
@@ -184,10 +191,11 @@ async fn forward(
     let body = BodyStream::new(stream)
         .map_err(|_| -> std::convert::Infallible { unreachable!("io::Error can never occur for an mpsc Receiver") })
         .boxed();
-    let mut resp = Response::from_parts(rparts, body);
-    if resp.status() == StatusCode::default() {
-        *resp.status_mut() = StatusCode::OK;
+    let mut resp = Response::builder().status(status.as_u16());
+    for (name, value) in &headers {
+        resp = resp.header(name, value);
     }
+    let resp = resp.body(body).expect("valid proxy response");
     Ok(resp)
 }
 
@@ -196,6 +204,7 @@ struct InspectCtx {
     mode: Mode,
     inspector: Inspector,
     recorder: Arc<Recorder>,
+    forensics: Option<Arc<EncryptedForensics>>,
     judge: Option<Arc<JudgeConfig>>,
 }
 
@@ -241,10 +250,13 @@ async fn inspect_and_forward(
                     }
                 }
                 if verdict.is_clean() && !escalated {
-                    let bytes = original_text_frame(&s, ctx.protocol.as_str(), tool_index);
+                    let bytes = text_frame(&s, ctx.protocol.as_str(), tool_index);
                     let _ = tx.send(Ok(bytes)).await;
                 } else {
-                    let stub = original_text_frame(
+                    if let Some(store) = &ctx.forensics {
+                        let _ = store.record("blocked-text", s.as_bytes());
+                    }
+                    let stub = text_frame(
                         "[carapace: blocked suspicious text content]",
                         ctx.protocol.as_str(),
                         tool_index,
@@ -255,18 +267,12 @@ async fn inspect_and_forward(
             Event::ToolUseStart { id, name } => {
                 tool_buf.clear();
                 tool_input.clear();
-                tool_buf.push(anthropic::event_to_bytes(
-                    &Event::ToolUseStart { id, name },
-                    tool_index,
-                ));
+                tool_buf.push(tool_start_frame(&Event::ToolUseStart { id, name }, ctx.protocol.as_str(), tool_index));
                 ctx.inspector.reset();
             }
             Event::ToolUseDelta(s) => {
                 tool_input.push_str(&s);
-                tool_buf.push(anthropic::event_to_bytes(
-                    &Event::ToolUseDelta(s.clone()),
-                    tool_index,
-                ));
+                tool_buf.push(tool_delta_frame(&Event::ToolUseDelta(s.clone()), ctx.protocol.as_str(), tool_index));
             }
             Event::ToolUseEnd => {
                 let verdict = ctx.inspector.feed(&Event::ToolUseEnd);
@@ -292,16 +298,17 @@ async fn inspect_and_forward(
                 }
                 if matches!(ctx.mode, Mode::Block) && is_malicious {
                     blocked_count += 1;
-                    for b in anthropic::blocked_tool_substitution(tool_index) {
+                    if let Some(store) = &ctx.forensics {
+                        let _ = store.record("blocked-tool-use", tool_input.as_bytes());
+                    }
+                    for b in blocked_tool_substitution(ctx.protocol.as_str(), tool_index) {
                         let _ = tx.send(Ok(b)).await;
                     }
                 } else {
                     for b in tool_buf.drain(..) {
                         let _ = tx.send(Ok(b)).await;
                     }
-                    let _ = tx
-                        .send(Ok(anthropic::event_to_bytes(&Event::ToolUseEnd, tool_index)))
-                        .await;
+                    let _ = tx.send(Ok(tool_end_frame(ctx.protocol.as_str(), tool_index))).await;
                 }
                 tool_index = tool_index.wrapping_add(1);
                 ctx.inspector.reset();
@@ -328,18 +335,6 @@ async fn inspect_and_forward(
     tracing::info!(protocol=%ctx.protocol, ?ctx.mode, blocked_count, max_severity, "stream complete");
 }
 
-fn extract_host(url: &str) -> String {
-    let stripped = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .unwrap_or(url);
-    trimmed_host(stripped).to_string()
-}
-
-fn trimmed_host(s: &str) -> &str {
-    s.split('/').next().unwrap_or(s)
-}
-
 fn mode_label(m: Mode) -> &'static str {
     match m {
         Mode::Monitor => "monitor",
@@ -351,10 +346,38 @@ fn parse_declared_tools(body: &Bytes, protocol: &str) -> HashSet<String> {
     crate::tools::parse_request_tools(body, protocol)
 }
 
-fn original_text_frame(text: &str, protocol: &str, index: u32) -> Bytes {
+fn text_frame(text: &str, protocol: &str, index: u32) -> Bytes {
     match protocol {
         "anthropic" => anthropic::event_to_bytes(&Event::TextDelta(text.to_string()), index),
-        _ => Bytes::copy_from_slice(text.as_bytes()),
+        _ => crate::protocol::openai::event_to_bytes(&Event::TextDelta(text.to_string()), index),
+    }
+}
+
+fn tool_start_frame(ev: &Event, protocol: &str, index: u32) -> Bytes {
+    match protocol {
+        "anthropic" => anthropic::event_to_bytes(ev, index),
+        _ => crate::protocol::openai::event_to_bytes(ev, index),
+    }
+}
+
+fn tool_delta_frame(ev: &Event, protocol: &str, index: u32) -> Bytes {
+    match protocol {
+        "anthropic" => anthropic::event_to_bytes(ev, index),
+        _ => crate::protocol::openai::event_to_bytes(ev, index),
+    }
+}
+
+fn tool_end_frame(protocol: &str, index: u32) -> Bytes {
+    match protocol {
+        "anthropic" => anthropic::event_to_bytes(&Event::ToolUseEnd, index),
+        _ => crate::protocol::openai::event_to_bytes(&Event::ToolUseEnd, index),
+    }
+}
+
+fn blocked_tool_substitution(protocol: &str, index: u32) -> Vec<Bytes> {
+    match protocol {
+        "anthropic" => anthropic::blocked_tool_substitution(index),
+        _ => crate::protocol::openai::blocked_tool_substitution(index),
     }
 }
 

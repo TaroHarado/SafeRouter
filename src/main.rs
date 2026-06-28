@@ -118,16 +118,13 @@ async fn main() -> anyhow::Result<()> {
                 "feed: v{} generated {}",
                 fetched.manifest.version, fetched.manifest.generated_at
             );
-            if let Some(pk) = &pubkey {
-                match fetched.manifest.verify_signature_with_pubkey(pk) {
-                    Ok(()) => eprintln!("feed: signature OK (pubkey {pk})"),
-                    Err(e) => {
-                        eprintln!("feed: signature FAIL — {e}");
-                        anyhow::bail!("feed signature verification failed");
-                    }
+            let pk = pubkey.as_ref().context("--pubkey is required; unsigned feed installs are unsafe")?;
+            match fetched.manifest.verify_signature_with_pubkey(pk) {
+                Ok(()) => eprintln!("feed: signature OK (pubkey {pk})"),
+                Err(e) => {
+                    eprintln!("feed: signature FAIL — {e}");
+                    anyhow::bail!("feed signature verification failed");
                 }
-            } else {
-                eprintln!("feed: no --pubkey given, signature NOT verified");
             }
             if fetched.manifest.verify_integrity(&fetched.rules, &fetched.blocklist) {
                 eprintln!("feed: integrity OK");
