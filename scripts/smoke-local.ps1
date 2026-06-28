@@ -1,16 +1,18 @@
-$ErrorActionPreference = 'Stop'
-
 param(
     [string]$BinaryPath = ".\target\debug\cape.exe",
     [int]$Port = 8484
 )
 
+$ErrorActionPreference = 'Stop'
+
 Write-Host "== SafeRouter local smoke =="
 
 $root = Split-Path -Parent $PSScriptRoot
-$site = Join-Path $root 'site'
+$bin = (Resolve-Path $BinaryPath).Path
+$stdout = Join-Path $env:TEMP 'saferouter-web.out.log'
+$stderr = Join-Path $env:TEMP 'saferouter-web.err.log'
 
-$proc = Start-Process -FilePath $BinaryPath -ArgumentList @('web', '--listen', "127.0.0.1:$Port", '--site', $site) -PassThru -WindowStyle Hidden
+$proc = Start-Process -FilePath $bin -ArgumentList @('web', '--listen', "127.0.0.1:$Port", '--site', 'site') -PassThru -WindowStyle Hidden -WorkingDirectory $root -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 
 try {
     for ($i = 0; $i -lt 50; $i++) {
@@ -22,6 +24,9 @@ try {
         }
     }
 
+    if ($proc.HasExited) {
+        throw "web daemon exited early. stderr: $(Get-Content $stderr -ErrorAction SilentlyContinue | Out-String)"
+    }
     Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -Method Get | Out-Null
     Write-Host "health: ok"
 

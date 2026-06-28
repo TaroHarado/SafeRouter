@@ -1,8 +1,8 @@
-$ErrorActionPreference = 'Stop'
-
 param(
     [string]$BinaryPath = ".\\cape.exe"
 )
+
+$ErrorActionPreference = 'Stop'
 
 Write-Host "== cape smoke (windows) =="
 & $BinaryPath --help | Out-Null
