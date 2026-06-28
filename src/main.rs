@@ -6,10 +6,11 @@ use anyhow::Context;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
+use carapace::artifact;
 use carapace::audit;
 use carapace::bundle;
 use carapace::certify;
-use carapace::cli::{Cli, Commands, Mode, RegistryCmd};
+use carapace::cli::{ArtifactCmd, Cli, Commands, Mode, RegistryCmd};
 use carapace::proxy::{self, ProxyConfig};
 use carapace::record::{EncryptedForensics, Recorder};
 use carapace::registry::{self, Registry};
@@ -237,6 +238,25 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+        Commands::Artifact { action } => match action {
+            ArtifactCmd::Verify { path, pubkey } => {
+                let verification = artifact::verify_bundle(&path, pubkey.as_deref())?;
+                eprintln!("bundle: {}", verification.path);
+                eprintln!("files_ok: {}", verification.files_ok);
+                eprintln!("checksums_ok: {}", verification.checksums_ok);
+                if let Some(sig_ok) = verification.entry_signature_ok {
+                    eprintln!("entry_signature_ok: {}", sig_ok);
+                }
+                eprintln!("summary: {}", verification.summary);
+                if !verification.files_ok
+                    || !verification.checksums_ok
+                    || verification.entry_signature_ok == Some(false)
+                {
+                    std::process::exit(2);
+                }
+                Ok(())
+            }
+        },
         Commands::Audit => {
             let report = audit::run();
             eprintln!("platform: {}", report.platform);

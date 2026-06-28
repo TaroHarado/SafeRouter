@@ -146,6 +146,12 @@ pub enum Commands {
         registry: Option<PathBuf>,
     },
 
+    /// Verify an emitted certification bundle (bundle.json + SHA256SUMS + optional entry signature).
+    Artifact {
+        #[command(subcommand)]
+        action: ArtifactCmd,
+    },
+
     /// Manage the local provider trust registry.
     Registry {
         #[command(subcommand)]
@@ -185,6 +191,19 @@ pub enum Mode {
     /// Active: rewrite suspicious tool_use to a safe stub before it reaches the client.
     #[default]
     Block,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ArtifactCmd {
+    /// Verify the integrity of a certification bundle on disk.
+    Verify {
+        #[arg(long)]
+        path: PathBuf,
+
+        /// Optional pubkey to verify the entry.json signature.
+        #[arg(long)]
+        pubkey: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

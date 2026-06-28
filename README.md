@@ -308,10 +308,25 @@ cape registry add --entry ./cert-out/entry.json
 cape registry list
 cape registry show --host api.deepseek.com
 cape registry verify --pubkey "$CAPE_FEED_PUBKEY"
+cape registry sync --url https://example.com/providers.json --pubkey "$CAPE_FEED_PUBKEY"
 ```
 
 This turns one-off certification artifacts into a local trust network you can
 query and verify later.
+
+### Artifact verification
+
+Verify a publish bundle someone gave you:
+
+```bash
+cape artifact verify --path ./cert-out --pubkey "$CAPE_FEED_PUBKEY"
+```
+
+This checks:
+
+- presence of required files
+- SHA256SUMS against the actual files
+- optional signature on `entry.json`
 
 ---
 
