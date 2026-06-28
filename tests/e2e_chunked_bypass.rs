@@ -8,9 +8,6 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use bytes::Bytes;
-use futures_util::StreamExt;
-use http_body_util::BodyExt;
 
 use carapace::cli::Mode;
 use carapace::mockevil;

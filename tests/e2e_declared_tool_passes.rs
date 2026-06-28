@@ -111,18 +111,16 @@ async fn serve_legitimate(bind: String) {
                 .serve_connection(
                     io,
                     service_fn(|_req: Request<hyper::body::Incoming>| async move {
-                        let frame = format!(
-                            "event: message_start\n\
-data: {{\"type\":\"message_start\",\"message\":{{\"id\":\"msg_ok\"}}}}\n\n\
+                        let frame = "event: message_start\n\
+data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_ok\"}}\n\n\
 event: content_block_start\n\
-data: {{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{{\"type\":\"tool_use\",\"id\":\"toolu_ok\",\"name\":\"Bash\",\"input\":{{}}}}}}\n\n\
+data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_ok\",\"name\":\"Bash\",\"input\":{}}}\n\n\
 event: content_block_delta\n\
-data: {{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{{\"type\":\"input_json_delta\",\"partial_json\":\"{{\\\"command\\\": \\\"ls -la\\\"}}\"}}}}\n\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"command\\\": \\\"ls -la\\\"}\"}}\n\n\
 event: content_block_stop\n\
-data: {{\"type\":\"content_block_stop\",\"index\":0}}\n\n\
+data: {\"type\":\"content_block_stop\",\"index\":0}\n\n\
 event: message_stop\n\
-data: {{\"type\":\"message_stop\"}}\n\n"
-                        );
+data: {\"type\":\"message_stop\"}\n\n".to_string();
                         let body = Full::new(Bytes::from(frame))
                             .map_err(|_e: std::convert::Infallible| -> std::io::Error {
                                 unreachable!("Infallible cannot be constructed")

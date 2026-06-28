@@ -64,11 +64,11 @@ pub trait ProtocolAdapter: Send + Sync {
 pub fn pick(upstream: &str, content_type: &str) -> Box<dyn ProtocolAdapter> {
     if upstream.contains("anthropic.com") || content_type.contains("anthropic") {
         Box::new(AnthropicAdapter)
-    } else if upstream.contains("api.z.ai") || upstream.contains("z.ai") {
-        Box::new(OpenAiAdapter) // protocol_name is "openai"; future ZaiAdapter adds reasoning_effort
-    } else if upstream.contains("deepseek.com") || upstream.contains("api.deepseek") {
-        Box::new(OpenAiAdapter)
-    } else if upstream.contains("openai.com")
+    } else if upstream.contains("api.z.ai")
+        || upstream.contains("z.ai")
+        || upstream.contains("deepseek.com")
+        || upstream.contains("api.deepseek")
+        || upstream.contains("openai.com")
         || upstream.contains("/v1/")
         || content_type.contains("openai")
     {

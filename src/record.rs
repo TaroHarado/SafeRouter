@@ -26,7 +26,6 @@ use chacha20poly1305::{
 };
 
 use crate::inspect::Verdict;
-use crate::protocol::Event;
 
 #[derive(Serialize)]
 pub struct LogEntry {
@@ -196,8 +195,6 @@ fn truncate(s: &str, n: usize) -> String {
 mod tests {
     use super::*;
     use rand::RngCore;
-
-    fn record_inner(_key: &[u8; 32]) {}
 
     #[test]
     fn encrypted_forensics_round_trips() {

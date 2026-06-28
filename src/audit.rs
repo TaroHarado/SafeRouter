@@ -112,7 +112,7 @@ fn scan_processes(findings: &mut Vec<Finding>) {
         RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
     );
     let mut seen = HashSet::new();
-    for (_, proc) in sys.processes() {
+    for proc in sys.processes().values() {
         let name = proc.name().to_os_string().to_string_lossy().to_lowercase();
         for sus in SUSPICIOUS_PROCESS_NAMES {
             if name == sus.to_lowercase() && seen.insert(name.clone()) {

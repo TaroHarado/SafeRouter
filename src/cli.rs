@@ -113,16 +113,11 @@ pub enum Commands {
     },
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum, Default)]
 pub enum Mode {
     /// Passive: log alerts only (you must watch logs yourself).
     Monitor,
     /// Active: rewrite suspicious tool_use to a safe stub before it reaches the client.
+    #[default]
     Block,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Block
-    }
 }

@@ -27,7 +27,7 @@ use crate::cli::Mode;
 use crate::inspect::{Inspector, Rules};
 use crate::judge::{self, JudgeConfig};
 use crate::protocol::anthropic;
-use crate::protocol::{self, Event, ProtocolAdapter};
+use crate::protocol::{self, Event};
 use crate::record::{EncryptedForensics, Recorder};
 use crate::secure::Secret;
 
@@ -104,7 +104,7 @@ async fn forward(
 ) -> anyhow::Result<Response<BoxBody>> {
     let (mut parts, body) = req.into_parts();
 
-    let upstream_uri = if parts.uri.scheme().is_some() {
+    let _upstream_uri = if parts.uri.scheme().is_some() {
         parts.uri.clone()
     } else {
         let path = parts
@@ -124,7 +124,7 @@ async fn forward(
         .unwrap_or("")
         .to_string();
 
-    let is_stream = body_bytes
+    let _is_stream = body_bytes
         .windows(13)
         .any(|w| w == b"\"stream\":true")
         || content_type.contains("event-stream");
@@ -163,7 +163,7 @@ async fn forward(
     let resp_bytes = rbody.collect().await?.to_bytes();
 
     let allowed_tools = parse_declared_tools(&body_bytes, protocol_name);
-    let mut inspector = Inspector::from_rules(&rules, allowed_tools);
+    let inspector = Inspector::from_rules(&rules, allowed_tools);
 
     let (tx, rx) = mpsc::channel::<Chunk>(64);
     let recorder_cloned = recorder.clone();
@@ -171,16 +171,14 @@ async fn forward(
     let protocol_lite = protocol_name.to_string();
 
     let event_stream = adapter.stream(resp_bytes.clone());
-    tokio::spawn(inspect_and_forward(
-        event_stream,
-        resp_bytes.clone(),
-        tx,
-        protocol_lite,
-        mode_lite,
+    let ctx = InspectCtx {
+        protocol: protocol_lite,
+        mode: mode_lite,
         inspector,
-        recorder_cloned,
+        recorder: recorder_cloned,
         judge,
-    ));
+    };
+    tokio::spawn(inspect_and_forward(event_stream, tx, ctx));
 
     let stream = ReceiveStream { rx };
     let body = BodyStream::new(stream)
@@ -193,24 +191,26 @@ async fn forward(
     Ok(resp)
 }
 
-async fn inspect_and_forward(
-    events: std::pin::Pin<Box<dyn futures_core::Stream<Item = Event> + Send + 'static>>,
-    original_bytes: Bytes,
-    mut tx: mpsc::Sender<Chunk>,
+struct InspectCtx {
     protocol: String,
     mode: Mode,
-    mut inspector: Inspector,
+    inspector: Inspector,
     recorder: Arc<Recorder>,
     judge: Option<Arc<JudgeConfig>>,
+}
+
+async fn inspect_and_forward(
+    events: std::pin::Pin<Box<dyn futures_core::Stream<Item = Event> + Send + 'static>>,
+    tx: mpsc::Sender<Chunk>,
+    mut ctx: InspectCtx,
 ) {
     use futures_util::StreamExt;
 
     let mut events = events;
+    let tx = tx;
     let mut tool_buf: Vec<Bytes> = Vec::new();
     let mut tool_input = String::new();
     let mut tool_index: u32 = 0;
-    let mut in_tool = false;
-    let mut tool_name: Option<String> = None;
     let mut text_buf = String::new();
     let mut blocked_count = 0u32;
     let mut max_severity = 0u32;
@@ -220,11 +220,11 @@ async fn inspect_and_forward(
         match ev {
             Event::TextDelta(s) => {
                 text_buf.push_str(&s);
-                let verdict = inspector.feed(&Event::TextDelta(s.clone()));
+                let verdict = ctx.inspector.feed(&Event::TextDelta(s.clone()));
                 let mut escalated = false;
                 let mut effective_severity = verdict.severity;
                 if !verdict.is_clean() && (30..60).contains(&verdict.severity) {
-                    if let Some(cfg) = &judge {
+                    if let Some(cfg) = &ctx.judge {
                         if let Ok(jv) = judge::judge(&s, cfg).await {
                             if jv.is_malicious() {
                                 escalated = true;
@@ -241,27 +241,25 @@ async fn inspect_and_forward(
                     }
                 }
                 if verdict.is_clean() && !escalated {
-                    let bytes = original_text_frame(&s, protocol.as_str(), tool_index);
+                    let bytes = original_text_frame(&s, ctx.protocol.as_str(), tool_index);
                     let _ = tx.send(Ok(bytes)).await;
                 } else {
                     let stub = original_text_frame(
                         "[carapace: blocked suspicious text content]",
-                        protocol.as_str(),
+                        ctx.protocol.as_str(),
                         tool_index,
                     );
                     let _ = tx.send(Ok(stub)).await;
                 }
             }
             Event::ToolUseStart { id, name } => {
-                in_tool = true;
-                tool_name = Some(name.clone());
                 tool_buf.clear();
                 tool_input.clear();
                 tool_buf.push(anthropic::event_to_bytes(
                     &Event::ToolUseStart { id, name },
                     tool_index,
                 ));
-                inspector.reset();
+                ctx.inspector.reset();
             }
             Event::ToolUseDelta(s) => {
                 tool_input.push_str(&s);
@@ -271,11 +269,11 @@ async fn inspect_and_forward(
                 ));
             }
             Event::ToolUseEnd => {
-                let verdict = inspector.feed(&Event::ToolUseEnd);
+                let verdict = ctx.inspector.feed(&Event::ToolUseEnd);
                 let mut effective_severity = verdict.severity;
                 let mut judge_escalated = false;
                 if !verdict.is_clean() && (30..60).contains(&verdict.severity) {
-                    if let Some(cfg) = &judge {
+                    if let Some(cfg) = &ctx.judge {
                         if let Ok(jv) = judge::judge(&tool_input, cfg).await {
                             if jv.is_malicious() {
                                 effective_severity = 85;
@@ -292,7 +290,7 @@ async fn inspect_and_forward(
                         matched_categories.push("llm-judge-escalated".to_string());
                     }
                 }
-                if matches!(mode, Mode::Block) && is_malicious {
+                if matches!(ctx.mode, Mode::Block) && is_malicious {
                     blocked_count += 1;
                     for b in anthropic::blocked_tool_substitution(tool_index) {
                         let _ = tx.send(Ok(b)).await;
@@ -305,10 +303,8 @@ async fn inspect_and_forward(
                         .send(Ok(anthropic::event_to_bytes(&Event::ToolUseEnd, tool_index)))
                         .await;
                 }
-                in_tool = false;
-                tool_name = None;
                 tool_index = tool_index.wrapping_add(1);
-                inspector.reset();
+                ctx.inspector.reset();
             }
             Event::Raw(b) => {
                 let _ = tx.send(Ok(b)).await;
@@ -317,9 +313,9 @@ async fn inspect_and_forward(
     }
 
     // Diagnostic recorder entry — does not include secrets.
-    let _ = recorder.record(
-        protocol.as_str(),
-        mode_label(mode),
+    let _ = ctx.recorder.record(
+        ctx.protocol.as_str(),
+        mode_label(ctx.mode),
         &crate::inspect::Verdict {
             matched: matched_categories.clone(),
             severity: max_severity,
@@ -329,9 +325,7 @@ async fn inspect_and_forward(
         &text_buf,
     );
 
-    tracing::info!(%protocol, ?mode, blocked_count, max_severity, "stream complete");
-    // suppress unused original_bytes
-    let _ = original_bytes;
+    tracing::info!(protocol=%ctx.protocol, ?ctx.mode, blocked_count, max_severity, "stream complete");
 }
 
 fn extract_host(url: &str) -> String {

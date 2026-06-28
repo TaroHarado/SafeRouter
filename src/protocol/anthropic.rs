@@ -51,14 +51,9 @@ struct SseFrame {
 struct AnthropicPayload {
     #[serde(rename = "type")]
     ty: String,
-    // content_block_start fields
-    index: Option<u32>,
     content_block: Option<Value>,
     // content_block_delta fields
     delta: Option<Value>,
-    // message_delta
-    #[serde(default)]
-    usage: Option<Value>,
 }
 
 /// Parse Anthropic SSE bytes into [`Event`]s. Anything we don't recognise

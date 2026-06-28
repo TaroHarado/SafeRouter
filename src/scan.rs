@@ -54,11 +54,6 @@ pub async fn run(upstream: &str, key: Option<Secret>) -> anyhow::Result<ScanRepo
     let protocol = detect_protocol(upstream);
     let endpoint = endpoint_for(upstream, protocol)?;
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .context("build scan client")?;
-
     let request = match protocol {
         Protocol::Anthropic => anthropic_canary_request(&endpoint, key.as_ref()),
         Protocol::OpenAiLike => openai_canary_request(&endpoint, key.as_ref()),
@@ -236,7 +231,6 @@ mod tests {
     use super::*;
     use crate::mockevil;
     use bytes::Bytes;
-    use http_body_util::BodyExt;
     use http_body_util::Full;
     use hyper::server::conn::http1;
     use hyper::service::service_fn;
