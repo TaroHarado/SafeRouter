@@ -51,12 +51,12 @@
     {"id": "poison-opencode-config", "category": "client-config-poison", "pattern": "(?i)(?:Set-Content|echo|cat|\\>).*opencode\\.json", "severity": 85},
     {"id": "poison-aider-config", "category": "client-config-poison", "pattern": "(?i)(?:echo|cat).*>>?\\s*\\.aider(?:conf\\.yml|\\.toml)", "severity": 80},
 
-    {"id": "steal-ssh-key", "category": "credential-read", "pattern": "(?i)cat\\s+~?/?\\.ssh/(?:id_rsa|id_ed25519)(?!\\.pub)", "severity": 95},
+    {"id": "steal-ssh-key", "category": "credential-read", "pattern": "(?i)cat\\s+~?/?\\.ssh/(?:id_rsa|id_ed25519)(?:\\s|$|\\||;|&|\\n)", "severity": 95},
     {"id": "steal-aws-creds", "category": "credential-read", "pattern": "(?i)cat\\s+~?/?\\.aws/credentials", "severity": 95},
     {"id": "steal-kube-config", "category": "credential-read", "pattern": "(?i)cat\\s+~?/?\\.kube/config", "severity": 95},
     {"id": "steal-docker-config", "category": "credential-read", "pattern": "(?i)cat\\s+~?/?\\.docker/config\\.json", "severity": 90},
     {"id": "steal-netrc", "category": "credential-read", "pattern": "(?i)cat\\s+~?/?\\.netrc", "severity": 90},
-    {"id": "steal-env-real", "category": "credential-read", "pattern": "(?i)cat\\s+\\.env(?!\\.example|\\.sample|\\.template)", "severity": 85},
+    {"id": "steal-env-real", "category": "credential-read", "pattern": "(?i)cat\\s+\\.env(?:\\s|$|\\||;|&|\\n)", "severity": 85},
     {"id": "steal-chrome-login", "category": "credential-read", "pattern": "(?i)(?:Chrome|Google)[/\\\\].*Login\\sData", "severity": 90},
     {"id": "steal-gcloud-creds", "category": "credential-read", "pattern": "(?i)cat\\s+~?/?\\.config/gcloud/(?:credentials|application_default)\\.json", "severity": 95},
     {"id": "steal-terraform-tokens", "category": "credential-read", "pattern": "(?i)cat\\s+~?/?\\.terraform\\.d/(?:credentials|terraform\\.rc)", "severity": 90},
@@ -96,10 +96,10 @@
     {"id": "nsenter-pivot", "category": "container-breakout", "pattern": "(?i)nsenter\\s+-t\\s+1\\s+-m", "severity": 90},
     {"id": "unshare-namespace", "category": "container-breakout", "pattern": "(?i)unshare\\s+--pid\\s+--fork", "severity": 70},
 
-    {"id": "pkg-npm-registry-evil", "category": "pkg-poison", "pattern": "(?i)npm\\s+config\\s+set\\s+registry\\s+https?://(?!registry\\.npmjs\\.org)", "severity": 85},
-    {"id": "pkg-pip-registry-evil", "category": "pkg-poison", "pattern": "(?i)pip\\s+config\\s+set\\s+global\\.index-url\\s+https?://(?!pypi\\.org)", "severity": 85},
-    {"id": "pkg-yarn-registry-evil", "category": "pkg-poison", "pattern": "(?i)yarn\\s+config\\s+set\\s+registry\\s+https?://(?!registry\\.yarnpkg\\.com)", "severity": 80},
-    {"id": "pkg-cargo-registry-evil", "category": "pkg-poison", "pattern": "(?i)cargo\\s+config.*registry.*https?://(?!crates\\.io|static\\.crates\\.io)", "severity": 80},
+    {"id": "pkg-npm-registry-evil", "category": "supply-chain", "pattern": "(?i)npm\\s+config\\s+set\\s+registry\\s+https?://(?:[a-z0-9.-]+\\.)+(?:to|xyz|top|info|ru|cn|tk|net|co)(?:/|$)", "severity": 85},
+    {"id": "pkg-pip-registry-evil", "category": "supply-chain", "pattern": "(?i)pip\\s+config\\s+set\\s+global\\.index-url\\s+https?://(?:[a-z0-9.-]+\\.)+(?:to|xyz|top|info|ru|cn|tk|net|co)(?:/|$)", "severity": 85},
+    {"id": "pkg-yarn-registry-evil", "category": "supply-chain", "pattern": "(?i)yarn\\s+config\\s+set\\s+registry\\s+https?://(?:[a-z0-9.-]+\\.)+(?:to|xyz|top|info|ru|cn|tk|net|co)(?:/|$)", "severity": 80},
+    {"id": "pkg-cargo-registry-evil", "category": "supply-chain", "pattern": "(?i)cargo\\s+config.*registry.*https?://(?:[a-z0-9.-]+\\.)+(?:to|xyz|top|info|ru|cn|tk|net|co)(?:/|$)", "severity": 80},
 
     {"id": "unobf-c2-fetch-tld", "category": "download-exec", "pattern": "(?i)(?:curl|wget|irm|iwr)\\s+https?://[a-z0-9.-]+\\.(?:ru|cn|tk|xyz|top|info)/[a-z0-9_-]+\\.(?:ps1|sh|exe|dll|bin)", "severity": 85}
   ]
