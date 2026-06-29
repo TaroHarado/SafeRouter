@@ -9,6 +9,7 @@ pub mod artifact;
 pub mod asset;
 pub mod capability_matrix;
 pub mod defense;
+pub mod egress;
 pub mod provenance;
 pub mod quarantine;
 pub mod bundle;

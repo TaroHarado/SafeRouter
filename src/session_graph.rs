@@ -82,6 +82,27 @@ pub const PAT_LONG_DWELL_NEW_CAP: ChainPattern = ChainPattern {
     description: "long dwell (>3d) then new capability: delayed trigger",
 };
 
+pub const PAT_BASELINE_ANOMALY: ChainPattern = ChainPattern {
+    id: "behavioral-baseline-anomaly",
+    severity: 60,
+    description: "first-time capability or asset class outside session baseline",
+};
+
+pub const PAT_CAPABILITY_ESCALATION: ChainPattern = ChainPattern {
+    id: "behavioral-capability-escalation",
+    severity: 75,
+    description: "first-time Execute / NetworkPost / BrowserDownload outside baseline: mid-session escalation",
+};
+
+/// Snapshot of the learned behavioral baseline for audit / debugging.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BaselineSummary {
+    pub finalized: bool,
+    pub capabilities: Vec<Capability>,
+    pub assets: Vec<AssetClass>,
+    pub period_secs: u64,
+}
+
 /// Detected chain — reported to governor & audit log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChainHit {
@@ -103,6 +124,15 @@ pub struct SessionGraph {
     /// Last seen ts (for long-dwell detection).
     last_ts: u64,
     session_start_ts: u64,
+    /// Baseline period: capabilities/asset-classes observed during the first
+    /// `baseline_period_secs` of the session. Anything outside this set
+    /// later is an anomaly.
+    baseline_capabilities: Vec<Capability>,
+    baseline_assets: Vec<AssetClass>,
+    baseline_period_secs: u64,
+    baseline_finalized: bool,
+    /// Anomaly score (0..100) for the most-recent event.
+    last_anomaly_score: u32,
 }
 
 impl Default for SessionGraph {
@@ -119,10 +149,38 @@ impl SessionGraph {
             seen_capabilities: Vec::new(),
             last_ts: 0,
             session_start_ts: now_ts(),
+            baseline_capabilities: Vec::new(),
+            baseline_assets: Vec::new(),
+            baseline_period_secs: 300, // 5 minutes
+            baseline_finalized: false,
+            last_anomaly_score: 0,
         }
     }
 
+    /// Override the baseline-learning window. Default 5 minutes.
+    pub fn with_baseline_window(mut self, secs: u64) -> Self {
+        self.baseline_period_secs = secs;
+        self
+    }
+
     pub fn record(&mut self, ev: SessionEvent) {
+        // Update baseline during the learning window.
+        if !self.baseline_finalized {
+            if ev.ts.saturating_sub(self.session_start_ts) <= self.baseline_period_secs {
+                if !self.baseline_capabilities.contains(&ev.capability) {
+                    self.baseline_capabilities.push(ev.capability);
+                }
+                if !self.baseline_assets.contains(&ev.asset) {
+                    self.baseline_assets.push(ev.asset);
+                }
+            } else {
+                // Window elapsed — freeze the baseline.
+                self.baseline_finalized = true;
+            }
+        }
+        // Compute anomaly score for this event.
+        self.last_anomaly_score = self.compute_anomaly(&ev);
+
         for aid in &ev.artifact_ids {
             self.artifact_index
                 .entry(aid.clone())
@@ -136,6 +194,57 @@ impl SessionGraph {
             self.last_ts = ev.ts;
         }
         self.nodes.push(ev);
+    }
+
+    /// Anomaly score (0..100) for an event, based on how far outside the
+    /// session baseline it falls. 0 = within baseline, 100 = first-time
+    /// critical capability + sensitive asset + tainted.
+    fn compute_anomaly(&self, ev: &SessionEvent) -> u32 {
+        let mut score = 0u32;
+        // First-time capability not in baseline.
+        if self.baseline_finalized && !self.baseline_capabilities.contains(&ev.capability) {
+            score += 30;
+            // Critical-capability bonus: Execute / NetworkPost / BrowserDownload
+            // outside baseline is a stronger signal.
+            if matches!(
+                ev.capability,
+                Capability::Execute | Capability::NetworkPost | Capability::BrowserDownload | Capability::McpInvoke
+            ) {
+                score += 20;
+            }
+        }
+        // First-time asset class not in baseline.
+        if self.baseline_finalized && !self.baseline_assets.contains(&ev.asset) {
+            score += 25;
+            // Sensitive asset bonus.
+            if ev.asset.is_hard_deny_for_auto() {
+                score += 25;
+            }
+        }
+        // Tainted artifact.
+        if ev.tainted {
+            score += 20;
+        }
+        // Provider source outside baseline (baseline typically user-driven).
+        if self.baseline_finalized
+            && matches!(ev.source, Source::Provider | Source::Web | Source::Mcp)
+        {
+            score += 10;
+        }
+        score.min(100)
+    }
+
+    pub fn last_anomaly_score(&self) -> u32 {
+        self.last_anomaly_score
+    }
+
+    pub fn baseline_summary(&self) -> BaselineSummary {
+        BaselineSummary {
+            finalized: self.baseline_finalized,
+            capabilities: self.baseline_capabilities.clone(),
+            assets: self.baseline_assets.clone(),
+            period_secs: self.baseline_period_secs,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -156,6 +265,8 @@ impl SessionGraph {
         hits.extend(self.detect_mcp_to_shell_or_net());
         hits.extend(self.detect_taint_leap());
         hits.extend(self.detect_long_dwell_new_cap());
+        hits.extend(self.detect_baseline_anomaly());
+        hits.extend(self.detect_capability_escalation());
         hits
     }
 
@@ -399,6 +510,55 @@ impl SessionGraph {
         }
         out
     }
+
+    // ----- Layer 7: behavioral baseline anomaly ---------------------------
+
+    fn detect_baseline_anomaly(&self) -> Vec<ChainHit> {
+        let mut out = Vec::new();
+        if !self.baseline_finalized {
+            return out;
+        }
+        // Once baseline is finalized, every new event is checked against it.
+        // Events that arrived during the learning window are already in the
+        // baseline set, so checking them is a no-op (they always match).
+        for n in &self.nodes {
+            let cap_new = !self.baseline_capabilities.contains(&n.capability);
+            let asset_new = !self.baseline_assets.contains(&n.asset);
+            if cap_new || asset_new {
+                out.push(ChainHit {
+                    rule_id: PAT_BASELINE_ANOMALY.id.to_string(),
+                    severity: PAT_BASELINE_ANOMALY.severity,
+                    description: PAT_BASELINE_ANOMALY.description.to_string(),
+                    events: vec![n.id],
+                });
+            }
+        }
+        out
+    }
+
+    // ----- Layer 7: capability escalation mid-session --------------------
+
+    fn detect_capability_escalation(&self) -> Vec<ChainHit> {
+        let mut out = Vec::new();
+        if !self.baseline_finalized {
+            return out;
+        }
+        for n in &self.nodes {
+            if matches!(
+                n.capability,
+                Capability::Execute | Capability::NetworkPost | Capability::BrowserDownload | Capability::McpInvoke
+            ) && !self.baseline_capabilities.contains(&n.capability)
+            {
+                out.push(ChainHit {
+                    rule_id: PAT_CAPABILITY_ESCALATION.id.to_string(),
+                    severity: PAT_CAPABILITY_ESCALATION.severity,
+                    description: PAT_CAPABILITY_ESCALATION.description.to_string(),
+                    events: vec![n.id],
+                });
+            }
+        }
+        out
+    }
 }
 
 fn now_ts() -> u64 {
@@ -487,5 +647,71 @@ mod tests {
         let g = SessionGraph::new();
         assert!(g.detect_chains().is_empty());
         assert!(g.is_empty());
+    }
+
+    #[test]
+    fn baseline_anomaly_fires_on_new_capability_post_window() {
+        let mut g = SessionGraph::new().with_baseline_window(0); // window already closed
+        // First event: ReadFile on Project (will become baseline).
+        g.record(ev(1, Capability::ReadFile, AssetClass::Project, Source::User, false, 1_000, &["p:./a.rs"], "read a.rs"));
+        // Mark baseline as finalized by faking the timestamp.
+        g.baseline_finalized = true;
+        // New capability: Execute (not in baseline).
+        g.record(ev(2, Capability::Execute, AssetClass::Executable, Source::User, false, 2_000, &["p:cargo"], "cargo build"));
+        let hits = g.detect_chains();
+        assert!(
+            hits.iter().any(|h| h.rule_id == "behavioral-baseline-anomaly"),
+            "expected baseline-anomaly hit, got {:?}",
+            hits
+        );
+    }
+
+    #[test]
+    fn capability_escalation_fires_for_first_execute() {
+        let mut g = SessionGraph::new().with_baseline_window(0);
+        g.record(ev(1, Capability::ReadFile, AssetClass::Project, Source::User, false, 1_000, &["p:./a.rs"], "read a.rs"));
+        g.baseline_finalized = true;
+        // First-time Execute outside baseline.
+        g.record(ev(2, Capability::Execute, AssetClass::Executable, Source::User, false, 2_000, &["p:cargo"], "cargo build"));
+        let hits = g.detect_chains();
+        assert!(
+            hits.iter().any(|h| h.rule_id == "behavioral-capability-escalation"),
+            "expected capability-escalation hit, got {:?}",
+            hits
+        );
+    }
+
+    #[test]
+    fn baseline_stays_quiet_within_window() {
+        let mut g = SessionGraph::new().with_baseline_window(3_600); // 1h
+        // All events within the window — should be in baseline, no anomaly.
+        g.record(ev(1, Capability::ReadFile, AssetClass::Project, Source::User, false, 1_000, &["p:./a.rs"], "read a.rs"));
+        g.record(ev(2, Capability::WriteFile, AssetClass::Project, Source::User, false, 1_010, &["p:./a.rs"], "edit a.rs"));
+        g.record(ev(3, Capability::Execute, AssetClass::Executable, Source::User, false, 1_020, &["p:cargo"], "cargo test"));
+        let hits = g.detect_chains();
+        assert!(
+            !hits.iter().any(|h| h.rule_id == "behavioral-baseline-anomaly"),
+            "expected no baseline anomaly within window, got {:?}",
+            hits
+        );
+    }
+
+    #[test]
+    fn anomaly_score_zero_for_baseline_event() {
+        let mut g = SessionGraph::new().with_baseline_window(0);
+        g.record(ev(1, Capability::ReadFile, AssetClass::Project, Source::User, false, 1_000, &["p:./a.rs"], "read a.rs"));
+        // ReadFile on Project = baseline → score 0.
+        assert_eq!(g.last_anomaly_score(), 0);
+    }
+
+    #[test]
+    fn anomaly_score_high_for_sensitive_first() {
+        let mut g = SessionGraph::new().with_baseline_window(0);
+        g.record(ev(1, Capability::ReadFile, AssetClass::Project, Source::User, false, 1_000, &["p:./a.rs"], "read a.rs"));
+        g.baseline_finalized = true;
+        // First-time Credential access from Provider — high anomaly.
+        g.record(ev(2, Capability::ReadFile, AssetClass::Credential, Source::Provider, true, 2_000, &["p:~/.ssh/id_rsa"], "cat id_rsa"));
+        let score = g.last_anomaly_score();
+        assert!(score >= 50, "expected high anomaly score, got {}", score);
     }
 }
