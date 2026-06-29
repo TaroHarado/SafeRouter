@@ -1,4 +1,4 @@
-//! Local session state store.
+﻿//! Local session state store.
 //!
 //! The arbiter needs memory, but not raw chat logs forever. This module stores
 //! compact structured state per agent session: intent, grants, and notable
@@ -73,11 +73,11 @@ pub struct DecisionRecord {
 pub fn default_root() -> PathBuf {
     if cfg!(target_os = "windows") {
         if let Ok(home) = std::env::var("USERPROFILE") {
-            return PathBuf::from(home).join(".carapace").join("sessions");
+            return PathBuf::from(home).join(".saferouter").join("sessions");
         }
     }
     if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join(".carapace").join("sessions");
+        return PathBuf::from(home).join(".saferouter").join("sessions");
     }
     PathBuf::from("sessions")
 }

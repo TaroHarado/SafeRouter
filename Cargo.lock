@@ -223,47 +223,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ae3f5d315924270530207e2a68396c3cc547f6dca3fbdca317cfb1a51edb593"
 
 [[package]]
-name = "carapace"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-stream",
- "axum",
- "base64",
- "bytes",
- "chacha20poly1305",
- "clap",
- "ed25519-dalek",
- "futures-core",
- "futures-util",
- "hex",
- "http",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-util",
- "once_cell",
- "rand 0.8.6",
- "rand_core 0.6.4",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "sled",
- "sysinfo",
- "tempfile",
- "thiserror",
- "time",
- "tokio",
- "tower",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "zeroize",
-]
-
-[[package]]
 name = "cc"
 version = "1.2.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1579,6 +1538,47 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "safeproxy"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "axum",
+ "base64",
+ "bytes",
+ "chacha20poly1305",
+ "clap",
+ "ed25519-dalek",
+ "futures-core",
+ "futures-util",
+ "hex",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "once_cell",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sled",
+ "sysinfo",
+ "tempfile",
+ "thiserror",
+ "time",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "zeroize",
+]
 
 [[package]]
 name = "scopeguard"

@@ -1,4 +1,4 @@
-//! Local provider registry / trust cache.
+﻿//! Local provider registry / trust cache.
 //!
 //! `cape certify` creates publishable artifacts.
 //! `cape registry` turns those artifacts into a local trust graph:
@@ -159,11 +159,11 @@ impl RegistryFeed {
 pub fn default_registry_path() -> PathBuf {
     if cfg!(target_os = "windows") {
         if let Ok(home) = std::env::var("USERPROFILE") {
-            return PathBuf::from(home).join(".carapace").join("registry.json");
+            return PathBuf::from(home).join(".saferouter").join("registry.json");
         }
     }
     if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join(".carapace").join("registry.json");
+        return PathBuf::from(home).join(".saferouter").join("registry.json");
     }
     PathBuf::from("registry.json")
 }

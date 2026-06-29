@@ -1,4 +1,4 @@
-//! E2E: legitimate Claude Code-style flow with declared tools is NOT
+﻿//! E2E: legitimate Claude Code-style flow with declared tools is NOT
 //! blocked. Demonstrates the difference between upstream-injected `tool_use`
 //! (high severity / blocked) and a client-declared tool returning clean
 //! arguments (allowed through).
@@ -8,11 +8,11 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use carapace::cli::Mode;
-use carapace::proxy::{self, ProxyConfig};
-use carapace::record::Recorder;
-use carapace::secure::Secret;
-use carapace::tools;
+use safeproxy::cli::Mode;
+use safeproxy::proxy::{self, ProxyConfig};
+use safeproxy::record::Recorder;
+use safeproxy::secure::Secret;
+use safeproxy::tools;
 use bytes::Bytes;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -43,9 +43,9 @@ async fn declared_tool_use_with_clean_args_is_forwarded() {
         mode: Mode::Block,
         recorder,
         forensics: None,
-        rules: std::sync::Arc::new(carapace::inspect::BUILTIN.clone()),
+        rules: std::sync::Arc::new(safeproxy::inspect::BUILTIN.clone()),
         judge: None,
-        defense: Some(std::sync::Arc::new(carapace::defense::DefenseEngine::degraded())),
+        defense: Some(std::sync::Arc::new(safeproxy::defense::DefenseEngine::degraded())),
         quarantine: None,
     };
     let proxy_handle = tokio::spawn(proxy::run(cfg));
@@ -80,7 +80,7 @@ async fn declared_tool_use_with_clean_args_is_forwarded() {
     let body = resp.bytes().await.expect("body bytes");
     let text = String::from_utf8_lossy(&body).into_owned();
 
-    // Legitimate Bash call → must reach the client untouched. We must NOT
+    // Legitimate Bash call в†’ must reach the client untouched. We must NOT
     // see the blocked stub.
     assert!(
         text.contains("\"name\":\"Bash\""),
@@ -88,7 +88,7 @@ async fn declared_tool_use_with_clean_args_is_forwarded() {
     );
     assert!(
         !text.contains("[carapace: blocked tool_use with high-severity injection]"),
-        "false positive — clean declared tool_use got blocked: {text}"
+        "false positive вЂ” clean declared tool_use got blocked: {text}"
     );
 
     proxy_handle.abort();

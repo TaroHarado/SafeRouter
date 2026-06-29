@@ -1,26 +1,26 @@
 [package]
-name = "carapace"
-version = "0.1.0"
+name = "safeproxy"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.75"
 license = "Apache-2.0"
-description = "Local guard against malicious LLM providers — wire-level inspection proxy"
-homepage = "https://github.com/TaroHarado/carapace"
-repository = "https://github.com/TaroHarado/carapace"
-keywords = ["ai", "security", "llm", "proxy", "prompt-injection"]
+description = "SafeRouter — local LLM firewall with provenance tracking, capability matrix, and decoy canaries"
+homepage = "https://saferouter.io"
+repository = "https://github.com/TaroHarado/safeproxy"
+keywords = ["ai", "security", "llm", "proxy", "prompt-injection", "firewall", "agent-safety", "red-team"]
 categories = ["command-line-utilities", "network-programming", "cryptography"]
 authors = ["TaroHarado"]
 
 [[bin]]
-name = "cape"
+name = "sr"
 path = "src/main.rs"
 
 [lib]
-name = "carapace"
+name = "safeproxy"
 path = "src/lib.rs"
 
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/cape-{ target }.{ archive-format }"
+pkg-url = "{ repo }/releases/download/v{ version }/sr-{ target }.{ archive-format }"
 bin-dir = "{ bin }{ binary-ext }"
 
 [dependencies]

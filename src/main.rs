@@ -1,4 +1,4 @@
-//! `cape` — carapace CLI entry point.
+﻿//! `cape` вЂ” carapace CLI entry point.
 
 use std::net::SocketAddr;
 
@@ -6,24 +6,24 @@ use anyhow::Context;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use carapace::artifact;
-use carapace::audit;
-use carapace::bundle;
-use carapace::certify;
-use carapace::cli::{ArtifactCmd, CanaryCmd, Cli, Commands, EnforceCmd, Mode, PolicyCmd, QuarantineCmd, RegistryCmd, SessionCmd};
-use carapace::deep_scan;
-use carapace::monitor;
-use carapace::policy::{Action, ActionKind, ProviderRisk};
-use carapace::probes;
-use carapace::proxy::{self, ProxyConfig};
-use carapace::record::{EncryptedForensics, Recorder};
-use carapace::registry::{self, Registry};
-use carapace::scan;
-use carapace::score;
-use carapace::secure::Secret;
-use carapace::session;
-use carapace::sentinel;
-use carapace::web;
+use safeproxy::artifact;
+use safeproxy::audit;
+use safeproxy::bundle;
+use safeproxy::certify;
+use safeproxy::cli::{ArtifactCmd, CanaryCmd, Cli, Commands, EnforceCmd, Mode, PolicyCmd, QuarantineCmd, RegistryCmd, SessionCmd};
+use safeproxy::deep_scan;
+use safeproxy::monitor;
+use safeproxy::policy::{Action, ActionKind, ProviderRisk};
+use safeproxy::probes;
+use safeproxy::proxy::{self, ProxyConfig};
+use safeproxy::record::{EncryptedForensics, Recorder};
+use safeproxy::registry::{self, Registry};
+use safeproxy::scan;
+use safeproxy::score;
+use safeproxy::secure::Secret;
+use safeproxy::session;
+use safeproxy::sentinel;
+use safeproxy::web;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -50,12 +50,12 @@ async fn main() -> anyhow::Result<()> {
                 None => Secret::empty(),
             };
             let recorder = Recorder::open(&log).context("open log")?;
-            let loaded_rules = carapace::inspect::load_from_files(
+            let loaded_rules = safeproxy::inspect::load_from_files(
                 rules.as_deref(),
                 blocklist.as_deref(),
             )
             .context("load rules/blocklist")?;
-            let judge = carapace::judge::from_env().map(std::sync::Arc::new);
+            let judge = safeproxy::judge::from_env().map(std::sync::Arc::new);
             let forensics = match (forensics, forensics_pass) {
                 (Some(path), Some(pass)) => Some(std::sync::Arc::new(
                     EncryptedForensics::open(
@@ -67,8 +67,8 @@ async fn main() -> anyhow::Result<()> {
                 (Some(_), None) => anyhow::bail!("--forensics requires --forensics-pass"),
                 (None, _) => None,
             };
-let defense = std::sync::Arc::new(carapace::defense::DefenseEngine::with_default_provenance());
-            let quarantine = match carapace::quarantine::QuarantineStore::open_default() {
+let defense = std::sync::Arc::new(safeproxy::defense::DefenseEngine::with_default_provenance());
+            let quarantine = match safeproxy::quarantine::QuarantineStore::open_default() {
                 Ok(q) => Some(std::sync::Arc::new(q)),
                 Err(e) => {
                     eprintln!("carapace: quarantine store open failed: {e}; running without quarantine pipeline");
@@ -248,7 +248,7 @@ let defense = std::sync::Arc::new(carapace::defense::DefenseEngine::with_default
                             Ok(()) => eprintln!("OK   {host}"),
                             Err(e) => {
                                 failed += 1;
-                                eprintln!("FAIL {host} — {e}");
+                                eprintln!("FAIL {host} вЂ” {e}");
                             }
                         }
                     }
@@ -264,7 +264,7 @@ let defense = std::sync::Arc::new(carapace::defense::DefenseEngine::with_default
                     for (host, res) in remote.verify_all(&pubkey) {
                         if let Err(e) = res {
                             failed += 1;
-                            eprintln!("FAIL {host} — {e}");
+                            eprintln!("FAIL {host} вЂ” {e}");
                         }
                     }
                     if failed > 0 {
@@ -366,7 +366,7 @@ let defense = std::sync::Arc::new(carapace::defense::DefenseEngine::with_default
                     "outbound-send" => ActionKind::OutboundSend { label: target.clone() },
                     _ => anyhow::bail!("unknown action_kind: {action_kind}"),
                 };
-                let decision = carapace::policy::evaluate(&state, &Action { kind, provider_risk: risk });
+                let decision = safeproxy::policy::evaluate(&state, &Action { kind, provider_risk: risk });
                 eprintln!("decision={:?}", decision);
                 Ok(())
             }
@@ -387,13 +387,13 @@ let defense = std::sync::Arc::new(carapace::defense::DefenseEngine::with_default
                     "outbound-send" => ActionKind::OutboundSend { label: target.clone() },
                     _ => anyhow::bail!("unknown action_kind: {action_kind}"),
                 };
-                let judge_cfg = carapace::judge::from_env();
-                let outcome = carapace::enforcement::evaluate_with_judge(
+                let judge_cfg = safeproxy::judge::from_env();
+                let outcome = safeproxy::enforcement::evaluate_with_judge(
                     &state,
                     &Action { kind, provider_risk: risk },
                     judge_cfg.as_ref(),
                 ).await;
-                carapace::enforcement::record_outcome(&mut state, &outcome);
+                safeproxy::enforcement::record_outcome(&mut state, &outcome);
                 session::save(&root, &state)?;
                 eprintln!("{}", serde_json::to_string_pretty(&outcome)?);
                 Ok(())
@@ -402,7 +402,7 @@ let defense = std::sync::Arc::new(carapace::defense::DefenseEngine::with_default
         Commands::Audit => {
             let report = audit::run();
             eprintln!("platform: {}", report.platform);
-            eprintln!("risk: {} — {}", report.risk_score, report.verdict);
+            eprintln!("risk: {} вЂ” {}", report.risk_score, report.verdict);
             if report.findings.is_empty() {
                 eprintln!("no indicators matched");
             } else {
@@ -418,7 +418,7 @@ let defense = std::sync::Arc::new(carapace::defense::DefenseEngine::with_default
         Commands::Sentinel { interval } => {
             let dur = sentinel::parse_interval(&interval)
                 .with_context(|| format!("invalid --interval `{interval}`"))?;
-            sentinel::run(carapace::sentinel::SentinelConfig {
+            sentinel::run(safeproxy::sentinel::SentinelConfig {
                 interval: dur,
                 max_rounds: None,
             })
@@ -455,7 +455,7 @@ let defense = std::sync::Arc::new(carapace::defense::DefenseEngine::with_default
         Commands::Feed { url, pubkey, out } => {
             let out = out.to_str().unwrap_or(".").to_string();
             eprintln!("cape feed: fetching {url}");
-            let fetched = carapace::feed::fetch_remote(&url)
+            let fetched = safeproxy::feed::fetch_remote(&url)
                 .await
                 .context("fetch remote feed")?;
             eprintln!(
@@ -466,14 +466,14 @@ let defense = std::sync::Arc::new(carapace::defense::DefenseEngine::with_default
             match fetched.manifest.verify_signature_with_pubkey(pk) {
                 Ok(()) => eprintln!("feed: signature OK (pubkey {pk})"),
                 Err(e) => {
-                    eprintln!("feed: signature FAIL — {e}");
+                    eprintln!("feed: signature FAIL вЂ” {e}");
                     anyhow::bail!("feed signature verification failed");
                 }
             }
             if fetched.manifest.verify_integrity(&fetched.rules, &fetched.blocklist) {
                 eprintln!("feed: integrity OK");
             } else {
-                eprintln!("feed: integrity FAIL — hashes don't match");
+                eprintln!("feed: integrity FAIL вЂ” hashes don't match");
                 anyhow::bail!("feed integrity check failed");
             }
             std::fs::write(format!("{out}/rules.json"), &fetched.rules)
@@ -547,10 +547,10 @@ eprintln!("demo feed written -> {}", out.display());
         }
         Commands::Fuzz { format, out, apply, rules } => {
             let loaded_rules = match rules {
-                Some(p) => carapace::inspect::load_from_files(Some(&p), None)?,
-                None => carapace::inspect::BUILTIN.clone(),
+                Some(p) => safeproxy::inspect::load_from_files(Some(&p), None)?,
+                None => safeproxy::inspect::BUILTIN.clone(),
             };
-            let report = carapace::fuzz::fuzz_rules(&loaded_rules);
+            let report = safeproxy::fuzz::fuzz_rules(&loaded_rules);
             eprintln!(
                 "fuzz: {} rules, {} mutations, {} evasions (coverage {:.1}%)",
                 report.total_rules_fuzzed,
@@ -560,10 +560,10 @@ eprintln!("demo feed written -> {}", out.display());
             );
             let rendered = match format.as_str() {
                 "json" => serde_json::to_string_pretty(&report)?,
-                _ => carapace::fuzz::render_markdown(&report),
+                _ => safeproxy::fuzz::render_markdown(&report),
             };
             if apply {
-                let candidate_json = carapace::fuzz::render_candidate_rules_json(&report);
+                let candidate_json = safeproxy::fuzz::render_candidate_rules_json(&report);
                 let dest = std::path::Path::new("rules/fuzz-generated.json");
                 std::fs::create_dir_all("rules")?;
                 std::fs::write(dest, &candidate_json)?;
@@ -582,7 +582,7 @@ eprintln!("demo feed written -> {}", out.display());
             Ok(())
         }
         Commands::Canary { action } => {
-            use carapace::canary::CanaryRegistry;
+            use safeproxy::canary::CanaryRegistry;
             let registry = CanaryRegistry::new();
             match action {
                 CanaryCmd::Plant { home } => {
@@ -624,7 +624,7 @@ eprintln!("demo feed written -> {}", out.display());
             }
         }
         Commands::Quarantine { action } => {
-            use carapace::quarantine::QuarantineStore;
+            use safeproxy::quarantine::QuarantineStore;
             let store = QuarantineStore::open_default()
                 .context("open quarantine store")?;
             match action {

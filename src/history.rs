@@ -1,4 +1,4 @@
-//! Persistent provider history store.
+﻿//! Persistent provider history store.
 //!
 //! V1 used an ad-hoc per-host snapshot file to compute drift. That was enough
 //! for a local demo, but not enough for a real monitoring backbone. V2 starts
@@ -28,11 +28,11 @@ pub struct HistoryEntry {
 pub fn default_root() -> PathBuf {
     if cfg!(target_os = "windows") {
         if let Ok(home) = std::env::var("USERPROFILE") {
-            return PathBuf::from(home).join(".carapace").join("history");
+            return PathBuf::from(home).join(".saferouter").join("history");
         }
     }
     if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join(".carapace").join("history");
+        return PathBuf::from(home).join(".saferouter").join("history");
     }
     PathBuf::from("history")
 }

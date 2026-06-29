@@ -1,6 +1,6 @@
-//! CLI surface: clap-derived commands.
+﻿//! CLI surface: clap-derived commands.
 //!
-//! Four verbs — proxy | scan | audit | sentinel.
+//! Four verbs вЂ” proxy | scan | audit | sentinel.
 //! Mirrors holone's UX (proven), with explicit defaults that match safe usage:
 //!   - default `block` mode (not `monitor`)
 //!   - stderr alerting in addition to JSONL log
@@ -12,14 +12,17 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "cape",
-    bin_name = "cape",
+    name = "sr",
+    bin_name = "sr",
     version,
-    about = "local guard against malicious LLM providers — wire-level inspection proxy",
-    long_about = "carapace sits on the wire between your AI client and an upstream LLM \
+    about = "SafeRouter вЂ” local LLM firewall with provenance tracking, capability matrix, and decoy canaries",
+    long_about = "SafeRouter sits on the wire between your AI client and an upstream LLM \
 provider, reassembles SSE streams, and inspects every tool_use / text chunk for \
 prompt-injection, download-and-execute, persistence, anti-forensics and known IoCs. \
-Your API key is zeroized after use; never logged."
+Nine defense layers: regex rules, behavioral probes, threat-model matrix, taint \
+provenance, session-graph chain detector, asset-boundary classifier, quarantine \
+pipeline, egress entropy + allowlist, decoy canaries. Your API key is zeroized \
+after use; never logged. https://saferouter.io"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -166,7 +169,7 @@ pub enum Commands {
         #[arg(long, env = "CAPE_CERTIFY_SECRET")]
         signing_key: Option<String>,
 
-        /// Optional local registry path. Defaults to ~/.carapace/registry.json.
+        /// Optional local registry path. Defaults to ~/.saferouter/registry.json.
         #[arg(long)]
         registry: Option<PathBuf>,
     },
@@ -311,7 +314,7 @@ pub enum Commands {
     },
 
     /// Plant decoy credential files / wallet keystores. Any tool_use that
-    /// touches these paths triggers a hard Block. Asymmetric defense — the
+    /// touches these paths triggers a hard Block. Asymmetric defense вЂ” the
     /// attacker cannot tell decoys from real files.
     Canary {
         #[command(subcommand)]
@@ -319,7 +322,7 @@ pub enum Commands {
     },
 
     /// Manage the download quarantine pipeline. Quarantined artifacts are
-    /// held in ~/.carapace/quarantine/ for manual review.
+    /// held in ~/.saferouter/quarantine/ for manual review.
     Quarantine {
         #[command(subcommand)]
         action: QuarantineCmd,

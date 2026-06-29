@@ -1,21 +1,21 @@
-//! Provenance & taint tracking — Layer 2 of the SafeRouter defense model.
+﻿//! Provenance & taint tracking вЂ” Layer 2 of the SafeRouter defense model.
 //!
 //! Every artifact (URL, file path, tool_result content, command string) gets
 //! marked with a [`Source`]. When an artifact tagged UNTRUSTED is later used as
 //! input to another action, the downstream action inherits taint. The policy
 //! matrix then denies/quarantines tainted actions regardless of how benign
 //! the literal text looks. This is the architectural answer to the classic
-//! "серый провайдер разложит атаку на 5 шагов" attack chain — see the chain
+//! "СЃРµСЂС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ СЂР°Р·Р»РѕР¶РёС‚ Р°С‚Р°РєСѓ РЅР° 5 С€Р°РіРѕРІ" attack chain вЂ” see the chain
 //! detector in `session_graph.rs`.
 //!
 //! Without taint tracking, each step looks clean. With taint, step 3 (run a
 //! file) inherits UNTRUSTED from step 1 (URL extracted from provider output).
 //!
-//! Backed by embedded sled kv-store (`~/.carapace/provenance.sled/`). Survives
+//! Backed by embedded sled kv-store (`~/.saferouter/provenance.sled/`). Survives
 //! proxy restart, so a day-1 fetch -> day-3 execute trigger still gets caught.
 //!
 //! ```text
-//! серый провайдер разложит атаку на 5 шагов — этот модуль ловит именно такие цепочки
+//! СЃРµСЂС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ СЂР°Р·Р»РѕР¶РёС‚ Р°С‚Р°РєСѓ РЅР° 5 С€Р°РіРѕРІ вЂ” СЌС‚РѕС‚ РјРѕРґСѓР»СЊ Р»РѕРІРёС‚ РёРјРµРЅРЅРѕ С‚Р°РєРёРµ С†РµРїРѕС‡РєРё
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -40,11 +40,11 @@ pub struct Provenance {
     pub source: Source,
     /// When first observed (unix ts seconds).
     pub first_seen: u64,
-    /// When last updated (飙升 taint on each new encounter).
+    /// When last updated (йЈ™еЌ‡ taint on each new encounter).
     pub last_seen: u64,
     /// If true, the action that produced this artifact was tainted.
     pub tainted: bool,
-    /// Parent artifact id(s) — artifacts this one was derived from.
+    /// Parent artifact id(s) вЂ” artifacts this one was derived from.
     pub parents: Vec<ArtifactId>,
     /// Human-readable reason for the taint ("extracted from <id> of source=web").
     pub reason: Option<String>,
@@ -157,9 +157,9 @@ impl ProvenanceStore {
 
 fn default_path() -> PathBuf {
     if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
-        PathBuf::from(home).join(".carapace").join("provenance.sled")
+        PathBuf::from(home).join(".saferouter").join("provenance.sled")
     } else {
-        PathBuf::from(".carapace").join("provenance.sled")
+        PathBuf::from(".saferouter").join("provenance.sled")
     }
 }
 
@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn manual_taint_escalation() {
         let store = ProvenanceStore::open(tmp()).unwrap();
-        // Source::LocalFile is trusted (not in the untrusted tier) — record
+        // Source::LocalFile is trusted (not in the untrusted tier) вЂ” record
         // as clean, then escalate manually.
         let _ = store.record("escalate", "maybe", Source::LocalFile, &[]).unwrap();
         assert!(!store.lookup("escalate").unwrap().unwrap().tainted);

@@ -1,9 +1,9 @@
-//! Inspecting reverse proxy.
+﻿//! Inspecting reverse proxy.
 //!
-//! Sits between an AI client (Claude Code, Cline, Cursor, Aider…) and an
+//! Sits between an AI client (Claude Code, Cline, Cursor, AiderвЂ¦) and an
 //! upstream LLM provider. Forwards requests verbatim, streams responses
 //! chunk-by-chunk through the protocol adapter, and **buffers each tool_use
-//! block until it is complete** so the inspector sees reassembled input —
+//! block until it is complete** so the inspector sees reassembled input вЂ”
 //! the core defence against chunked-injection bypass.
 //!
 //! Text deltas are scanned with a fast-path regex on the fly and forwarded
@@ -277,7 +277,7 @@ async fn inspect_and_forward(
                         let _ = store.record("blocked-text", s.as_bytes());
                     }
                     let stub = text_frame(
-                        "[carapace: blocked suspicious text content]",
+                        "[saferouter: blocked suspicious text content]",
                         ctx.protocol.as_str(),
                         tool_index,
                     );
@@ -358,7 +358,7 @@ async fn inspect_and_forward(
                 }
 
                 // If the target path is currently in quarantine, block the
-                // execute outright — the file isn't where the agent thinks.
+                // execute outright вЂ” the file isn't where the agent thinks.
                 let blocked_by_quarantine = matches!(ctx.mode, Mode::Block)
                     && matches!(defense_report.capability, crate::asset::Capability::Execute)
                     && ctx
@@ -406,11 +406,11 @@ async fn inspect_and_forward(
                         let _ = store.record("blocked-tool-use", tool_input.as_bytes());
                     }
                     let stub_msg = if quarantined {
-                        "[carapace: artifact quarantined — review at ~/.carapace/quarantine/]"
+                        "[saferouter: artifact quarantined вЂ” review at ~/.saferouter/quarantine/]"
                     } else if blocked_by_quarantine {
-                        "[carapace: target path is in quarantine — release it first]"
+                        "[saferouter: target path is in quarantine вЂ” release it first]"
                     } else {
-                        "[carapace: blocked tool_use with high-severity injection]"
+                        "[saferouter: blocked tool_use with high-severity injection]"
                     };
                     for b in blocked_tool_substitution_with_msg(ctx.protocol.as_str(), tool_index, stub_msg) {
                         let _ = tx.send(Ok(b)).await;
@@ -430,7 +430,7 @@ async fn inspect_and_forward(
         }
     }
 
-    // Diagnostic recorder entry — does not include secrets.
+    // Diagnostic recorder entry вЂ” does not include secrets.
     let _ = ctx.recorder.record(
         ctx.protocol.as_str(),
         mode_label(ctx.mode),

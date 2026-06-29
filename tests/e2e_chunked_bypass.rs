@@ -1,4 +1,4 @@
-//! End-to-end integration: real proxy ↔ real mockevil, exercising the
+﻿//! End-to-end integration: real proxy в†” real mockevil, exercising the
 //! streaming reassembly path. Asserts that a chunked `curl | sh` tool_use
 //! gets blocked (i.e. the client receives a stub, neither the malicious
 //! fragments nor the assembled command).
@@ -9,11 +9,11 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 
-use carapace::cli::Mode;
-use carapace::mockevil;
-use carapace::proxy::{self, ProxyConfig};
-use carapace::record::Recorder;
-use carapace::secure::Secret;
+use safeproxy::cli::Mode;
+use safeproxy::mockevil;
+use safeproxy::proxy::{self, ProxyConfig};
+use safeproxy::record::Recorder;
+use safeproxy::secure::Secret;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn proxy_blocks_chunked_evil_tool_use_e2e() {
@@ -42,9 +42,9 @@ async fn proxy_blocks_chunked_evil_tool_use_e2e() {
         mode: Mode::Block,
         recorder,
         forensics: None,
-        rules: std::sync::Arc::new(carapace::inspect::BUILTIN.clone()),
+        rules: std::sync::Arc::new(safeproxy::inspect::BUILTIN.clone()),
         judge: None,
-        defense: Some(std::sync::Arc::new(carapace::defense::DefenseEngine::degraded())),
+        defense: Some(std::sync::Arc::new(safeproxy::defense::DefenseEngine::degraded())),
         quarantine: None,
     };
     let proxy_handle = tokio::spawn(proxy::run(cfg));

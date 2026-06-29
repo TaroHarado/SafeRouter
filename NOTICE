@@ -1,22 +1,25 @@
-carapace
+SafeRouter
+
 Copyright 2026 TaroHarado
 
-This product includes software developed by the carapace project
-(https://github.com/TaroHarado/carapace).
+This product includes software developed by the SafeRouter project
+(https://saferouter.io / https://github.com/TaroHarado/safeproxy).
 
-=== Third-party notices ===
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-This software depends on the following open-source crates (full list in
-Cargo.lock). Each is governed by its own license; here we list the most
-significant ones:
+    http://www.apache.org/licenses/LICENSE-2.0
 
-  - tokio (MIT)              — async runtime
-  - hyper (MIT)              — HTTP server/client
-  - serde (MIT)              — serialization
-  - clap (MIT/Apache-2.0)   — CLI framework
-  - regex (MIT)              — RE2-compatible regex
-  - zeroize (Apache-2.0/MIT) — secure memory handling
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
-All trademarks are property of their respective owners. "Anthropic", "OpenAI",
-"DeepSeek", "GLM", "Claude" are mentioned here only as protocol dialects we
-interoperate with; carapace is not affiliated with or endorsed by them.
+---
+
+SafeRouter is a local LLM firewall and is not affiliated with, sponsored by,
+or endorsed by Anthropic, OpenAI, Google, DeepSeek, or any other LLM provider
+whose protocols we
+interoperate with; SafeRouter is an independent security project.

@@ -1,4 +1,4 @@
-//! Download quarantine pipeline — Layer 5 of the SafeRouter model.
+﻿//! Download quarantine pipeline вЂ” Layer 5 of the SafeRouter model.
 //!
 //! When the matrix routes a write to Temp/Executable/AiClientConfig from a
 //! Provider/Web/Mcp source to `Quarantine`, the artifact is held here for
@@ -10,8 +10,8 @@
 //! ```
 //!
 //! Without quarantine, step 2 runs step 1's payload. With quarantine, step 1
-//! is diverted to `~/.carapace/quarantine/<sha256>.<ext>` and step 2's
-//! target path no longer exists — the original `/tmp/cache.sh` is empty or
+//! is diverted to `~/.saferouter/quarantine/<sha256>.<ext>` and step 2's
+//! target path no longer exists вЂ” the original `/tmp/cache.sh` is empty or
 //! absent. The artifact can be reviewed, hashed, signature-checked, and
 //! either released or purged.
 
@@ -40,7 +40,7 @@ pub struct QuarantineEntry {
     pub is_executable: bool,
 }
 
-/// Magic-byte content classification. Independent of file extension —
+/// Magic-byte content classification. Independent of file extension вЂ”
 /// catches payloads disguised as .txt or extensionless.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SniffedType {
@@ -137,7 +137,7 @@ impl SniffedType {
 pub struct QuarantineStore {
     root: PathBuf,
     entries: Arc<Mutex<Vec<QuarantineEntry>>>,
-    /// Hash allowlist — known-good hashes that auto-release on intake.
+    /// Hash allowlist вЂ” known-good hashes that auto-release on intake.
     allowlist: Arc<Mutex<HashSet<String>>>,
     /// Monotonic counter for unique filenames when sha collides.
     counter: Arc<std::sync::atomic::AtomicU64>,
@@ -212,7 +212,7 @@ impl QuarantineStore {
 
         let mut file = std::fs::File::create(&stored_path)?;
         file.write_all(content)?;
-        // Drop write/exec perms on the stored file — make execution harder.
+        // Drop write/exec perms on the stored file вЂ” make execution harder.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -295,9 +295,9 @@ impl QuarantineStore {
 
 fn default_root() -> PathBuf {
     if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
-        PathBuf::from(home).join(".carapace").join("quarantine")
+        PathBuf::from(home).join(".saferouter").join("quarantine")
     } else {
-        PathBuf::from(".carapace").join("quarantine")
+        PathBuf::from(".saferouter").join("quarantine")
     }
 }
 
@@ -325,7 +325,7 @@ fn guess_mime(path: &str) -> String {
     }
 }
 
-/// Sniff the actual content type from magic bytes — independent of the
+/// Sniff the actual content type from magic bytes вЂ” independent of the
 /// file extension. Catches payloads disguised as .txt or extensionless.
 pub fn sniff_content(data: &[u8]) -> SniffedType {
     if data.is_empty() {
@@ -354,7 +354,7 @@ pub fn sniff_content(data: &[u8]) -> SniffedType {
     if data.len() >= 2 && data[0] == 0x1F && data[1] == 0x8B {
         return SniffedType::Gzip;
     }
-    // ZIP (and zip-derived: jar, apk, docx, xlsx, odt — all zip).
+    // ZIP (and zip-derived: jar, apk, docx, xlsx, odt вЂ” all zip).
     if data.len() >= 4 && &data[0..4] == b"PK\x03\x04" {
         return SniffedType::ZipArchive;
     }
@@ -384,7 +384,7 @@ pub fn sniff_content(data: &[u8]) -> SniffedType {
     if data.len() >= 4 && &data[0..4] == b"%PDF" {
         return SniffedType::Pdf;
     }
-    // tar — ustar magic at offset 257.
+    // tar вЂ” ustar magic at offset 257.
     if data.len() >= 265 && &data[257..262] == b"ustar" {
         return SniffedType::TarArchive;
     }
@@ -402,7 +402,7 @@ pub fn sniff_content(data: &[u8]) -> SniffedType {
         }
         return SniffedType::ShellScript;
     }
-    // PowerShell without shebang — UTF-8 BOM + script content.
+    // PowerShell without shebang вЂ” UTF-8 BOM + script content.
     if data.len() >= 3 && &data[0..3] == b"\xEF\xBB\xBF" {
         // Check if content looks like PowerShell (Param/Function/Set-).
         let tail = &data[3..];
@@ -437,7 +437,7 @@ pub fn sniff_content(data: &[u8]) -> SniffedType {
     if lower_prefix.starts_with("<?xml") {
         return SniffedType::Xml;
     }
-    // Plain text — only ASCII printable / whitespace.
+    // Plain text вЂ” only ASCII printable / whitespace.
     if !data.is_empty()
         && data
             .iter()
@@ -473,7 +473,7 @@ pub fn list_archive_members(data: &[u8], sniffed: SniffedType) -> Vec<String> {
 /// then the variable-length name / extra / comment.
 fn list_zip_members(data: &[u8]) -> Vec<String> {
     let mut out = Vec::new();
-    // Scan for the central directory magic — it appears after the local file
+    // Scan for the central directory magic вЂ” it appears after the local file
     // headers, so we can't start at offset 0.
     let mut i = 0;
     while i + 4 <= data.len() {
@@ -728,7 +728,7 @@ mod tests {
 
     #[test]
     fn sniff_executable_disguised_as_txt_is_caught() {
-        // PE disguised as .txt — content sniff catches it.
+        // PE disguised as .txt вЂ” content sniff catches it.
         let data = b"MZ\x90\x00";
         assert_eq!(sniff_content(data), SniffedType::WindowsExe);
     }
