@@ -10,6 +10,7 @@ pub mod bundle;
 pub mod certify;
 pub mod cli;
 pub mod deep_scan;
+pub mod enforcement;
 pub mod feed;
 pub mod history;
 pub mod identity;
