@@ -2,7 +2,7 @@
 
 > **Local LLM firewall — wire-level inspection proxy for AI coding agents.**
 
-[![build](https://github.com/TaroHarado/safeproxy/actions/workflows/ci.yml/badge.svg)](https://github.com/TaroHarado/safeproxy/actions)
+[![build](https://github.com/TaroHarado/SafeRouter/actions/workflows/ci.yml/badge.svg)](https://github.com/TaroHarado/SafeRouter/actions)
 [![crates.io](https://img.shields.io/crates/v/safeproxy.svg)](https://crates.io/crates/safeproxy)
 [![docs](https://docs.rs/safeproxy/badge.svg)](https://docs.rs/safeproxy)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -11,7 +11,7 @@
 
 Your API key is zeroized in place, never written to disk, never logged. The engine is pure Rust, crash-isolated, memory-safe.
 
-🌐 **https://saferouter.io** · 📦 `cargo install safeproxy` · 🐛 [Issues](https://github.com/TaroHarado/safeproxy/issues)
+🌐 **https://saferouter.io** · 📦 `cargo install safeproxy` · 🐛 [Issues](https://github.com/TaroHarado/SafeRouter/issues)
 
 **Status:** v1.0.0 · 9-layer defense model · 155 rules · 41 red-team probes · Apache-2.0.
 
@@ -74,8 +74,8 @@ cargo install safeproxy
 Or build from source:
 
 ```bash
-git clone https://github.com/TaroHarado/safeproxy
-cd safeproxy
+git clone https://github.com/TaroHarado/SafeRouter
+cd SafeRouter
 cargo build --release
 # binary: target/release/sr
 ```
@@ -253,4 +253,4 @@ Apache-2.0. See [`LICENSE`](LICENSE) or <http://www.apache.org/licenses/LICENSE-
 
 ## Author
 
-TaroHarado · <https://saferouter.io> · <https://github.com/TaroHarado/safeproxy>
+TaroHarado · <https://saferouter.io> · <https://github.com/TaroHarado/SafeRouter>

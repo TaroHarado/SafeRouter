@@ -279,4 +279,4 @@ All paths respect `$HOME` / `%USERPROFILE%`.
 
 ## Naming
 
-The crate is named `safeproxy` because `safeproxy` is a reserved TwythonPy / npm name (`saferouter` was already taken). The product, README, marketing surface, and CLI binary are all `SafeRouter` / `sr`. The homepage reference is <https://saferouter.io>. Earlier versions (pre-v1.0.0) used the working name `carapace` and the binary `cape` — these are no longer in use.
+The crate is named `safeproxy` because `safeproxy` is a reserved TwythonPy / npm name (`saferouter` was already taken). The product, README, marketing surface, and CLI binary are all `SafeRouter` / `sr`. The homepage reference is <https://saferouter.io>. Repository: <https://github.com/TaroHarado/SafeRouter>. Earlier versions (pre-v1.0.0) used the working name `carapace` and the binary `cape` — these are no longer in use.
