@@ -343,6 +343,24 @@ verdict: chat-only</pre>
               </div>
             </div>
           </div>
+
+          <div class="panel panel-glass index-card" id="chainGraphCard">
+            <div class="panel-head index-head">
+              <div>
+                <div class="kicker">Chain graph</div>
+                <h2>Attack chain visualisation</h2>
+              </div>
+              <button class="ghost-action" id="refreshChainGraphBtn" type="button">Refresh</button>
+            </div>
+            <canvas id="chainGraphCanvas" width="740" height="420" style="width:100%;border-radius:8px;background:#0d0f14;"></canvas>
+            <div class="report-body" id="chainGraphLegend" style="margin-top:8px;font-size:11px;color:var(--text-muted);">
+              Nodes: <span style="color:#f97316">■</span> block &nbsp;
+              <span style="color:#facc15">■</span> quarantine/ask &nbsp;
+              <span style="color:#22c55e">■</span> allow &nbsp;
+              <span style="color:#64748b">●</span> untainted &nbsp;
+              Edges: chain links
+            </div>
+          </div>
         </div>
       </section>
     </main>

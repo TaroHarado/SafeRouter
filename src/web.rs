@@ -155,6 +155,7 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/api/registry", get(list_registry))
         .route("/api/history", post(list_history))
         .route("/api/defense-events", get(list_defense_events))
+        .route("/api/chain-graph", get(chain_graph))
         .route("/api/quarantine", get(list_quarantine))
         .route("/api/quarantine/release", post(release_quarantine))
         .route("/api/quarantine/purge", post(purge_quarantine))
@@ -284,6 +285,75 @@ async fn list_history(Json(req): Json<HistoryQuery>) -> Result<Json<Vec<history:
 async fn list_defense_events() -> Result<Json<Vec<defense_log::DefenseEvent>>, ApiError> {
     let events = defense_log::load_recent(100).map_err(ApiError::from_anyhow)?;
     Ok(Json(events))
+}
+
+#[derive(Debug, Serialize)]
+struct GraphNode {
+    id: usize,
+    label: String,
+    capability: String,
+    asset: String,
+    decision: String,
+    tainted: bool,
+    ts: String,
+}
+
+#[derive(Debug, Serialize)]
+struct GraphEdge {
+    source: usize,
+    target: usize,
+    chain: String,
+    severity: u8,
+}
+
+#[derive(Debug, Serialize)]
+struct ChainGraph {
+    nodes: Vec<GraphNode>,
+    edges: Vec<GraphEdge>,
+}
+
+async fn chain_graph() -> Result<Json<ChainGraph>, ApiError> {
+    let events = defense_log::load_recent(200).map_err(ApiError::from_anyhow)?;
+    let mut nodes: Vec<GraphNode> = Vec::new();
+    let mut edges: Vec<GraphEdge> = Vec::new();
+
+    for (idx, ev) in events.iter().enumerate() {
+        let short_target = ev.target.split('/').next_back().unwrap_or(&ev.target).to_string();
+        nodes.push(GraphNode {
+            id: idx,
+            label: format!("{} · {}", ev.capability, short_target),
+            capability: ev.capability.clone(),
+            asset: ev.asset_class.clone(),
+            decision: ev.decision.clone(),
+            tainted: ev.tainted,
+            ts: ev.ts.clone(),
+        });
+    }
+
+    // Build edges: for each chain_hit id shared between any two nodes, draw an edge.
+    // Simple heuristic: if event[j] has the same chain id as event[i] and j > i, connect i → j.
+    for (i, ev_i) in events.iter().enumerate() {
+        for chain_id in &ev_i.chain_hits {
+            // find the next event that also carries this chain id
+            for (j, ev_j) in events.iter().enumerate().skip(i + 1) {
+                if ev_j.chain_hits.contains(chain_id) {
+                    // Avoid duplicate edges for the same pair
+                    let already = edges.iter().any(|e: &GraphEdge| e.source == i && e.target == j);
+                    if !already {
+                        edges.push(GraphEdge {
+                            source: i,
+                            target: j,
+                            chain: chain_id.clone(),
+                            severity: 75,
+                        });
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(Json(ChainGraph { nodes, edges }))
 }
 
 async fn list_quarantine() -> Result<Json<Vec<quarantine::QuarantineEntry>>, ApiError> {

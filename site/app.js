@@ -437,3 +437,166 @@ if (clearQuarantineBtn) {
     await refreshQuarantine();
   });
 }
+
+const refreshChainGraphBtn = document.getElementById("refreshChainGraphBtn");
+if (refreshChainGraphBtn) {
+  refreshChainGraphBtn.addEventListener("click", () => refreshChainGraph().catch(() => {}));
+}
+
+refreshChainGraph().catch(() => {});
+
+async function refreshChainGraph() {
+  const canvas = /** @type {HTMLCanvasElement|null} */ (document.getElementById("chainGraphCanvas"));
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  let graph;
+  try {
+    const res = await fetch("/api/chain-graph");
+    if (!res.ok) throw new Error();
+    graph = await res.json();
+  } catch {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#64748b";
+    ctx.font = "13px Inter, monospace";
+    ctx.fillText("proxy offline — start sr proxy to populate graph", 20, canvas.height / 2);
+    return;
+  }
+
+  const { nodes, edges } = graph;
+  if (!nodes || nodes.length === 0) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#64748b";
+    ctx.font = "13px Inter, monospace";
+    ctx.fillText("no events yet — run sr proxy to populate", 20, canvas.height / 2);
+    return;
+  }
+
+  // ── Force-directed layout (simple Fruchterman-Reingold, 120 iterations) ──
+  const W = canvas.width;
+  const H = canvas.height;
+  const padding = 48;
+  const area = (W - padding * 2) * (H - padding * 2);
+  const k = Math.sqrt(area / Math.max(nodes.length, 1));
+
+  // Initialise positions on a circle to avoid cold-start collapse
+  const pos = nodes.map((_, i) => {
+    const angle = (2 * Math.PI * i) / nodes.length;
+    return {
+      x: W / 2 + (W / 2 - padding) * 0.6 * Math.cos(angle),
+      y: H / 2 + (H / 2 - padding) * 0.6 * Math.sin(angle),
+      vx: 0,
+      vy: 0,
+    };
+  });
+
+  for (let iter = 0; iter < 120; iter++) {
+    const temp = k * (1 - iter / 120);
+
+    // Repulsion
+    for (let i = 0; i < pos.length; i++) {
+      for (let j = i + 1; j < pos.length; j++) {
+        const dx = pos[i].x - pos[j].x;
+        const dy = pos[i].y - pos[j].y;
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
+        const force = (k * k) / dist;
+        pos[i].vx += (dx / dist) * force;
+        pos[i].vy += (dy / dist) * force;
+        pos[j].vx -= (dx / dist) * force;
+        pos[j].vy -= (dy / dist) * force;
+      }
+    }
+
+    // Attraction along edges
+    for (const edge of edges) {
+      const s = pos[edge.source];
+      const t = pos[edge.target];
+      if (!s || !t) continue;
+      const dx = t.x - s.x;
+      const dy = t.y - s.y;
+      const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
+      const force = (dist * dist) / k;
+      s.vx += (dx / dist) * force;
+      s.vy += (dy / dist) * force;
+      t.vx -= (dx / dist) * force;
+      t.vy -= (dy / dist) * force;
+    }
+
+    // Apply velocity with temperature damping + boundary clamp
+    for (const p of pos) {
+      const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+      if (speed > temp) {
+        p.vx = (p.vx / speed) * temp;
+        p.vy = (p.vy / speed) * temp;
+      }
+      p.x = Math.max(padding, Math.min(W - padding, p.x + p.vx));
+      p.y = Math.max(padding, Math.min(H - padding, p.y + p.vy));
+      p.vx = 0;
+      p.vy = 0;
+    }
+  }
+
+  // ── Draw ──
+  ctx.clearRect(0, 0, W, H);
+
+  // Edges
+  for (const edge of edges) {
+    const s = pos[edge.source];
+    const t = pos[edge.target];
+    if (!s || !t) continue;
+    const sev = edge.severity || 75;
+    const alpha = 0.3 + (sev / 100) * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    ctx.lineTo(t.x, t.y);
+    ctx.strokeStyle = `rgba(251,191,36,${alpha})`;
+    ctx.lineWidth = sev >= 90 ? 2.5 : sev >= 75 ? 1.5 : 1;
+    ctx.stroke();
+
+    // Small label mid-edge
+    ctx.save();
+    ctx.font = "9px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(251,191,36,0.6)";
+    ctx.fillText(edge.chain.replace("chain-", ""), (s.x + t.x) / 2 + 4, (s.y + t.y) / 2 - 3);
+    ctx.restore();
+  }
+
+  // Nodes
+  const R = 10;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const p = pos[i];
+    const color = node.decision === "block"
+      ? "#f97316"
+      : node.decision === "quarantine" || node.decision === "ask"
+        ? "#facc15"
+        : "#22c55e";
+
+    // glow for tainted
+    if (node.tainted) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R + 5, 0, Math.PI * 2);
+      ctx.fillStyle = color.replace(")", ",0.18)").replace("rgb", "rgba").replace("#", "rgba(").replace(",0.18)", ",0.18)");
+      // simpler:
+      ctx.fillStyle = `${color}30`;
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = "#0d0f14";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Label
+    ctx.save();
+    ctx.font = "9px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "#e2e8f0";
+    const labelText = node.label.length > 22 ? node.label.slice(0, 21) + "…" : node.label;
+    ctx.fillText(labelText, p.x + R + 4, p.y + 4);
+    ctx.restore();
+  }
+}
