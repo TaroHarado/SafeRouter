@@ -150,6 +150,32 @@ impl ProvenanceStore {
         Ok(())
     }
 
+    /// Garbage-collect taint entries older than `max_age_secs`. Untaints
+    /// artifacts whose `last_seen` is older than the cutoff by setting
+    /// `tainted = false`. The provenance record stays (for audit) but the
+    /// taint flag is cleared so downstream actions are no longer blocked by
+    /// stale taint from days ago.
+    ///
+    /// Returns the count of entries that were un-tainted.
+    pub fn gc_taint(&self, max_age_secs: u64) -> anyhow::Result<usize> {
+        let cutoff = now_ts().saturating_sub(max_age_secs);
+        let mut untainted = 0usize;
+        for entry in self.artifacts.iter() {
+            let (key, val) = entry?;
+            let mut p: Provenance = match serde_json::from_slice(&val) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            if p.tainted && p.last_seen < cutoff {
+                p.tainted = false;
+                p.reason = Some(format!("taint expired (gc at {})", now_ts()));
+                self.artifacts.insert(&key, serde_json::to_vec(&p)?)?;
+                untainted += 1;
+            }
+        }
+        Ok(untainted)
+    }
+
     /// Flush to disk (best-effort).
     pub fn flush(&self) -> anyhow::Result<()> {
         self.db.flush()?;
