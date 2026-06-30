@@ -62,12 +62,24 @@ impl WsAdapter for OpenAiRealtimeAdapter {
 
     /// Client-to-upstream frames. We don't block client input here —
     /// focus on detecting if the client is sending sensitive paths back
-    /// to the (possibly malicious) upstream.
+    /// to the (possibly malicious) upstream. If the frame looks like
+    /// an MCP-server JSON-RPC request embedding a `tools/call`, surface
+    /// the embedded text content so the egress layer can spot sensitive
+    /// exfil in user-sent payloads.
     fn process_inbound_text(&self, text: &str) -> Vec<Event> {
-        // Pass through as a WsText so the inspector sees it (potentially
-        // detecting sensitive-path-in-outbound messages via the
-        // egress layer). Adapters that want deeper detection can pull
-        // out payloads like conversation.item.create with function_call_output.
+        let mut events = Vec::new();
+        // Surface text blocks inside JSON-RPC envelopes (the way MCP
+        // servers speak over WS) so the inspector can detect sensitive
+        // content going outbound.
+        if let Some(joined) = crate::mcp::extract_text_blocks(text) {
+            events.push(Event::WsText {
+                text: text.to_string(),
+                from_upstream: false,
+            });
+            // Also surface as ToolUseDelta so the existing rules fire.
+            events.push(Event::ToolUseDelta(joined));
+            return events;
+        }
         vec![Event::WsText { text: text.to_string(), from_upstream: false }]
     }
 

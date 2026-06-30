@@ -27,6 +27,7 @@ pub mod history;
 pub mod identity;
 pub mod inspect;
 pub mod judge;
+pub mod mcp;
 pub mod mockevil;
 pub mod monitor;
 pub mod policy;
