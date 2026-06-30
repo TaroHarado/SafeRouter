@@ -47,6 +47,7 @@ async fn declared_tool_use_with_clean_args_is_forwarded() {
         judge: None,
         defense: Some(std::sync::Arc::new(safeproxy::defense::DefenseEngine::degraded())),
         quarantine: None,
+        mcp_policy: None,
     };
     let proxy_handle = tokio::spawn(proxy::run(cfg));
 

@@ -46,6 +46,7 @@ async fn proxy_blocks_chunked_evil_tool_use_e2e() {
         judge: None,
         defense: Some(std::sync::Arc::new(safeproxy::defense::DefenseEngine::degraded())),
         quarantine: None,
+        mcp_policy: None,
     };
     let proxy_handle = tokio::spawn(proxy::run(cfg));
 

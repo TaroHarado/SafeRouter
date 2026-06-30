@@ -231,6 +231,38 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude
 
 Any suspicious `tool_use` from the provider is replaced with a safe stub before your client sees it. Default mode is `block`; switch to `--mode monitor` to log-only.
 
+### Deploy to a Linux server
+
+The bundled deploy helper uses full paths to `ssh.exe` / `scp.exe`, so it still works when another agent has a broken `PATH` and says it "cannot find ssh".
+
+Requirements on the Linux server:
+
+```bash
+cargo --version
+```
+
+From Windows, ship source and build on the server:
+
+```powershell
+pwsh .\deploy\deploy-prod.ps1 -Host 203.0.113.10 -User deploy
+```
+
+Files added for production:
+
+- `deploy/deploy-prod.ps1` — archives local source, uploads it over full-path OpenSSH, builds `cargo build --release` on the server, installs service, restarts it
+- `deploy/saferouter.service` — `systemd` unit
+- `deploy/saferouter.env.example` — copied to `/etc/saferouter/saferouter.env` on first deploy
+
+After first deploy, edit the server env file and restart:
+
+```bash
+sudoedit /etc/saferouter/saferouter.env
+sudo systemctl restart saferouter
+sudo journalctl -u saferouter -f
+```
+
+If the client runs on another machine, change `LISTEN` in `/etc/saferouter/saferouter.env` from `127.0.0.1:8787` to `0.0.0.0:8787` and open the port in your firewall.
+
 ### Probe an unfamiliar provider before using it
 
 ```bash

@@ -86,6 +86,7 @@ let defense = std::sync::Arc::new(safeproxy::defense::DefenseEngine::with_defaul
                 judge,
                 defense: Some(defense),
                 quarantine,
+                mcp_policy: safeproxy::mcp_policy::global_policy(),
             };
             safeproxy::self_fuzz::spawn((*cfg.rules).clone());
             proxy::run(cfg).await

@@ -30,6 +30,7 @@ use crate::cli::Mode;
 use crate::defense::{DefenseDecision, DefenseEngine, ToolUseObservation};
 use crate::inspect::{Inspector, Rules};
 use crate::judge::{self, JudgeConfig};
+use crate::mcp_policy::McpPolicy;
 use crate::protocol::anthropic;
 use crate::protocol::{self, Event};
 use crate::quarantine::QuarantineStore;
@@ -50,6 +51,8 @@ pub struct ProxyConfig {
     pub defense: Option<Arc<DefenseEngine>>,
     /// Quarantine pipeline for downloads. None = no quarantine.
     pub quarantine: Option<Arc<QuarantineStore>>,
+    /// MCP tool-call policy (allowlist / denylist). None = no restriction.
+    pub mcp_policy: Option<McpPolicy>,
 }
 
 pub async fn run(cfg: ProxyConfig) -> anyhow::Result<()> {
@@ -65,6 +68,7 @@ pub async fn run(cfg: ProxyConfig) -> anyhow::Result<()> {
     let judge = cfg.judge.clone();
     let defense = cfg.defense.clone().unwrap_or_else(|| Arc::new(DefenseEngine::with_default_provenance()));
     let quarantine = cfg.quarantine.clone();
+    let mcp_policy = cfg.mcp_policy.clone();
 
     loop {
         let (stream, peer) = match listener.accept().await {
@@ -85,6 +89,7 @@ pub async fn run(cfg: ProxyConfig) -> anyhow::Result<()> {
             judge: judge.clone(),
             defense: defense.clone(),
             quarantine: quarantine.clone(),
+            mcp_policy: mcp_policy.clone(),
         });
         tokio::spawn(async move {
             if let Err(e) = http1::Builder::new()
@@ -118,6 +123,7 @@ struct ForwardCtx {
     judge: Option<Arc<JudgeConfig>>,
     defense: Arc<DefenseEngine>,
     quarantine: Option<Arc<QuarantineStore>>,
+    mcp_policy: Option<McpPolicy>,
 }
 
 async fn forward(
@@ -210,6 +216,7 @@ async fn forward(
         defense: fwd.defense.clone(),
         quarantine: fwd.quarantine.clone(),
         allowed_tools: allowed_tools.clone(),
+        mcp_policy: fwd.mcp_policy.clone(),
     };
     tokio::spawn(inspect_and_forward(event_stream, tx, ctx));
 
@@ -593,6 +600,7 @@ struct InspectCtx {
     defense: Arc<DefenseEngine>,
     quarantine: Option<Arc<QuarantineStore>>,
     allowed_tools: HashSet<String>,
+    mcp_policy: Option<McpPolicy>,
 }
 
 async fn inspect_and_forward(
@@ -656,6 +664,28 @@ async fn inspect_and_forward(
                 tool_buf.clear();
                 tool_input.clear();
                 tool_name = name.clone();
+                // MCP tool-call policy check — block before buffering.
+                if let Some(policy) = &ctx.mcp_policy {
+                    if policy.evaluate(&tool_name).is_block() {
+                        blocked_count += 1;
+                        matched_categories.push(format!("mcp-policy:denied:{tool_name}"));
+                        if max_severity < 80 {
+                            max_severity = 80;
+                        }
+                        tracing::warn!(tool = %tool_name, "mcp-policy: tool blocked at ToolUseStart");
+                        // Emit stub — skip buffering entirely.
+                        for b in blocked_tool_substitution_with_msg(
+                            ctx.protocol.as_str(),
+                            tool_index,
+                            "[saferouter: tool blocked by mcp-policy]",
+                        ) {
+                            let _ = tx.send(Ok(b)).await;
+                        }
+                        tool_index = tool_index.wrapping_add(1);
+                        ctx.inspector.reset();
+                        continue;
+                    }
+                }
                 tool_buf.push(tool_start_frame(&Event::ToolUseStart { id, name }, ctx.protocol.as_str(), tool_index));
                 ctx.inspector.reset();
             }
