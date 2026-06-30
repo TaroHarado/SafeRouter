@@ -12,11 +12,13 @@ use futures_core::Stream;
 pub mod anthropic;
 pub mod openai;
 pub mod passthrough;
+pub mod grpc;
 pub mod ws;
 
 pub use anthropic::AnthropicAdapter;
 pub use openai::OpenAiAdapter;
 pub use passthrough::PassthroughAdapter;
+pub use grpc::GrpcAdapter;
 
 /// Normalised stream event produced by a protocol adapter.
 ///
@@ -144,6 +146,8 @@ pub trait WsAdapter: Send + Sync {
 pub fn pick(upstream: &str, content_type: &str) -> Box<dyn ProtocolAdapter> {
     if upstream.contains("anthropic.com") || content_type.contains("anthropic") {
         Box::new(AnthropicAdapter)
+    } else if content_type.contains("grpc") || content_type.contains("application/grpc") {
+        Box::new(GrpcAdapter)
     } else if upstream.contains("api.z.ai")
         || upstream.contains("z.ai")
         || upstream.contains("deepseek.com")
