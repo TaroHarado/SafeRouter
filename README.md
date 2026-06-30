@@ -255,6 +255,8 @@ Files added for production:
 
 The bundled `systemd` unit sets `HOME=/var/lib/saferouter` so SafeRouter's runtime stores (`quarantine`, `provenance`, `self-fuzz`, logs) stay writable under service hardening.
 
+The `SR_MCP_ALLOW` / `SR_MCP_DENY` / `SR_MCP_POLICY` environment variables are kept for backward compatibility, but in the current proxy path they apply to remote `tool_use` names seen by SafeRouter generically, not only JSON-RPC MCP frames.
+
 After first deploy, edit the server env file and restart:
 
 ```bash

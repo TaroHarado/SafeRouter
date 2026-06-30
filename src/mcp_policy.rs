@@ -1,8 +1,10 @@
-//! MCP tool-call policy — allowlist / denylist for MCP `tools/call` by name.
+//! Remote tool-call policy — allowlist / denylist for tool names seen by the
+//! proxy.
 //!
-//! When SafeRouter sits in front of an AI agent that uses remote MCP servers,
-//! this module decides whether a given `tool_name` is permitted *before* the
-//! tool-use result even reaches the inspector.
+//! Historical note: this module started as an MCP-only gate, so the env vars
+//! keep the `SR_MCP_*` prefix for compatibility. In the current proxy path,
+//! the policy is applied to reassembled remote `tool_use` events generically,
+//! not just JSON-RPC MCP `tools/call` frames.
 //!
 //! ## Policy resolution order
 //!
@@ -35,7 +37,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-/// Policy decision for a single MCP tool call.
+/// Policy decision for a single remote tool call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum McpPolicyDecision {
     Allow,

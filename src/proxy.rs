@@ -51,7 +51,7 @@ pub struct ProxyConfig {
     pub defense: Option<Arc<DefenseEngine>>,
     /// Quarantine pipeline for downloads. None = no quarantine.
     pub quarantine: Option<Arc<QuarantineStore>>,
-    /// MCP tool-call policy (allowlist / denylist). None = no restriction.
+    /// Remote tool-call policy (allowlist / denylist). None = no restriction.
     pub mcp_policy: Option<McpPolicy>,
 }
 
@@ -666,7 +666,7 @@ async fn inspect_and_forward(
                 tool_input.clear();
                 tool_name = name.clone();
                 skip_current_tool = false;
-                // MCP tool-call policy check — block before buffering.
+                // Remote tool-call policy check — block before buffering.
                 if let Some(policy) = &ctx.mcp_policy {
                     if policy.evaluate(&tool_name).is_block() {
                         blocked_count += 1;
